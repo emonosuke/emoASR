@@ -15,7 +15,6 @@ EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
 from utils.io_utils import load_config
-from utils.model_utils import get_num_params
 from utils.path_utils import (
     get_log_save_paths2,
     get_model_optim_paths2,
@@ -237,4 +236,8 @@ if __name__ == "__main__":
     parser.add_argument("--empty_cache", action="store_true")
     args = parser.parse_args()
 
-    main(args)
+    try:
+        main(args)
+    except:
+        logging.error("***** ERROR occurs in training *****", exc_info=True)
+        logging.error("**********")

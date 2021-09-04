@@ -160,4 +160,8 @@ if __name__ == "__main__":
     parser.add_argument("--decode_ctc_weight", type=float, default=None)
     args = parser.parse_args()
 
-    main(args)
+    try:
+        main(args)
+    except:
+        logging.error("***** ERROR occurs in testing *****", exc_info=True)
+        logging.error("**********")
