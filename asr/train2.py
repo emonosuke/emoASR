@@ -1,11 +1,13 @@
 """ train ASR
 """
 import argparse
+import datetime
 import logging
 import math
 import os
 import socket
 import sys
+import time
 
 import torch
 from torch.optim import Adam
@@ -113,9 +115,7 @@ def train(model, optimizer, dataloader, params, device, epoch):
             for loss_key in loss_dict.keys():
                 loss_dict_sum[loss_key] += loss_dict[loss_key]
 
-        if (step + 1) % params.log_step == 0 and (
-            accum_step + 1
-        ) % params.accum_grad == 0:
+        if step % params.log_step == 0 and (accum_step + 1) % params.accum_grad == 0:
             loss_detail = " ".join(
                 [
                     f"{loss_key}: {loss_value/params.log_step:.3f}"
@@ -124,7 +124,7 @@ def train(model, optimizer, dataloader, params, device, epoch):
             )
 
             logging.info(
-                f"epoch = {(epoch+1):>2} step = {(step+1):>6} / {len(dataloader)//params.accum_grad:>6} lr = {optimizer._lr:.5f} "
+                f"epoch = {(epoch+1):>2} step = {step:>6} / {len(dataloader)//params.accum_grad:>6} lr = {optimizer._lr:.5f} "
                 + loss_detail
             )
 
@@ -212,7 +212,14 @@ def main(args):
         )
 
     for epoch in range(startep, params.num_epochs):
+        _time = time.time()
         train(model, optimizer, dataloader, params, device, epoch)
+        elapsed_time = datetime.timedelta(seconds=(time.time() - _time))
+        end_time = datetime.datetime.now() + elapsed_time * (
+            params.num_epochs - (epoch + 1)
+        )
+        logging.info(f"epoch = {(epoch+1):>2} elapsed time: {elapsed_time}")
+        logging.info(f"time to end: {end_time}")
 
         # TODO: validation
 

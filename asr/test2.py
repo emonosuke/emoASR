@@ -43,9 +43,7 @@ def test_step(model, data, beam_width, len_weight, decode_ctc_weight, device):
     return utt_id, hyps, scores, reftext
 
 
-def test(
-    model, dataloader, params, vocab, beam_width, len_p, decode_ctc_weight, device
-):
+def test(model, dataloader, vocab, beam_width, len_p, decode_ctc_weight, device):
     rows = []  # utt_id, token_id, text, reftext
 
     for data in dataloader:
@@ -126,14 +124,7 @@ def main(args):
     logging.info(f"result: {result_path}")
 
     results = test(
-        model,
-        dataloader,
-        params,
-        vocab,
-        beam_width,
-        len_weight,
-        decode_ctc_weight,
-        device,
+        model, dataloader, vocab, beam_width, len_weight, decode_ctc_weight, device,
     )
 
     data = pd.DataFrame(results, columns=["utt_id", "token_id", "text", "reftext"])
