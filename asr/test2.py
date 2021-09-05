@@ -93,7 +93,7 @@ def main(args):
 
     model_path = get_model_path2(args.conf, args.ep)
     logging.info(f"model: {model_path}")
-    model = ASR(params)
+    model = ASR(params, phase="test")
     model.load_state_dict(torch.load(model_path, map_location=device))
     model.to(device)
     model.eval()
