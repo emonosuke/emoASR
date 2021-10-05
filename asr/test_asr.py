@@ -145,6 +145,7 @@ if __name__ == "__main__":
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--data_tag", type=str, default="test")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--runtime", action="store_true")  # measure runtime mode
     #
     parser.add_argument("--beam_width", type=int, default=None)
     parser.add_argument("--len_weight", type=float, default=None)

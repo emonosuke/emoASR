@@ -9,6 +9,7 @@ import socket
 import sys
 import time
 
+import git
 import torch
 from torch.optim import Adam
 from torch.utils.data import DataLoader
@@ -153,7 +154,10 @@ def main(args):
     logging.info(
         f"server: {socket.gethostname()} | gpu: {os.getenv('CUDA_VISIBLE_DEVICES')} | pid: {os.getpid():d}"
     )
-    logging.info(f"torch: {torch.__version__}")
+    # logging.info(f"torch: {torch.__version__}")
+    commit_hash = git.Repo(search_parent_directories=True).head.object.hexsha
+    logging.info(f"commit: {commit_hash}")
+    logging.info(f"conda env: {os.environ['CONDA_DEFAULT_ENV']}")
 
     model = ASR(params)
 
@@ -183,6 +187,8 @@ def main(args):
         num_gpus = torch.cuda.device_count()
         device_ids = list(range(num_gpus))
         model = torch.nn.DataParallel(model, device_ids=device_ids)
+    else:
+        num_gpus = 1
 
     model.to(device)
     model.train()
@@ -195,7 +201,7 @@ def main(args):
         # bucket shuffling
         dataloader = DataLoader(
             dataset=dataset,
-            batch_sampler=ASRBatchSampler(dataset, params),
+            batch_sampler=ASRBatchSampler(dataset, params, min_batch_size=num_gpus),
             collate_fn=dataset.collate_fn,
             num_workers=1,
         )
@@ -224,6 +230,9 @@ def main(args):
         # TODO: validation
 
         if epoch == 0 or (epoch + 1) % params.save_step == 0:
+            if args.debug:
+                continue
+
             save_path = save_format.format(epoch + 1)
             if torch.cuda.device_count() > 1:
                 torch.save(model.module.state_dict(), save_path)
@@ -240,7 +249,7 @@ if __name__ == "__main__":
     parser.add_argument("-conf", type=str, required=True)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--empty_cache", action="store_true")
+    parser.add_argument("--empty_cache", action="store_true")  # unrecommended
     args = parser.parse_args()
 
     try:
