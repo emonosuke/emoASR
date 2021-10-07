@@ -5,7 +5,10 @@ import logging
 import os
 import socket
 import sys
+import time
 
+import git
+import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
@@ -24,9 +27,9 @@ from utils.path_utils import (
 )
 from utils.vocab import Vocab
 
-from asr.dataset2 import ASRDataset
+from asr.datasets import ASRDataset
 from asr.evaluator.eval_wer import compute_wers2
-from asr.models2.asr import ASR
+from asr.modeling.asr import ASR
 
 # Reproducibility
 torch.manual_seed(0)
@@ -43,10 +46,22 @@ def test_step(model, data, beam_width, len_weight, decode_ctc_weight, device):
     return utt_id, hyps, scores, reftext
 
 
-def test(model, dataloader, vocab, beam_width, len_p, decode_ctc_weight, device):
+def test(
+    model,
+    dataloader,
+    vocab,
+    beam_width,
+    len_p,
+    decode_ctc_weight,
+    device,
+    num_samples=-1,
+):
     rows = []  # utt_id, token_id, text, reftext
 
-    for data in dataloader:
+    for i, data in enumerate(dataloader):
+        if num_samples > 0 and (i + 1) > num_samples:
+            return rows
+
         utt_id, hyps, scores, reftext = test_step(
             model, data, beam_width, len_p, decode_ctc_weight, device
         )
@@ -57,7 +72,7 @@ def test(model, dataloader, vocab, beam_width, len_p, decode_ctc_weight, device)
             text = vocab.ids2text(hyps[0])
             rows.append([utt_id, token_id, text, reftext])
 
-        logging.debug(f"{utt_id}: {text}")
+        logging.debug(f"{utt_id}({(i+1):d}/{len(dataloader):d}): {text}")
 
     return rows
 
@@ -81,15 +96,24 @@ def main(args):
         else params.decode_ctc_weight
     )
 
-    logging.basicConfig(
-        format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
-        level=logging.DEBUG,
-    )
+    if args.debug:
+        logging.basicConfig(
+            format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
+            level=logging.DEBUG,
+        )
+    else:
+        logging.basicConfig(
+            format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
+            level=logging.INFO,
+        )
+
     logging.info(f"***** {' '.join(sys.argv)}")
     logging.info(
         f"server: {socket.gethostname()} | gpu: {os.getenv('CUDA_VISIBLE_DEVICES')} | pid: {os.getpid():d}"
     )
-    logging.info(f"torch: {torch.__version__}")
+    commit_hash = git.Repo(search_parent_directories=True).head.object.hexsha
+    logging.info(f"commit: {commit_hash}")
+    logging.info(f"conda env: {os.environ['CONDA_DEFAULT_ENV']}")
 
     model_path = get_model_path2(args.conf, args.ep)
     logging.info(f"model: {model_path}")
@@ -123,6 +147,30 @@ def main(args):
     result_path = os.path.join(results_dir, result_file)
     logging.info(f"result: {result_path}")
 
+    if args.runtime:
+        torch.set_num_threads(1)
+
+        runtimes = []
+        for j in range(args.runtime_num_repeats):
+            start_time = time.time()
+            test(
+                model,
+                dataloader,
+                vocab,
+                beam_width,
+                len_weight,
+                decode_ctc_weight,
+                device,
+                num_samples=args.runtime_num_samples,
+            )
+            runtime = time.time() - start_time
+            runtime /= args.runtime_num_samples
+            logging.info(f"Run {(j+1):d} runtime: {runtime:.5f} / hyp")
+            runtimes.append(runtime)
+
+        print(f"Averaged runtime {np.mean(runtimes):.5f} on {device.type}")
+        return
+
     results = test(
         model, dataloader, vocab, beam_width, len_weight, decode_ctc_weight, device,
     )
@@ -146,6 +194,8 @@ if __name__ == "__main__":
     parser.add_argument("--data_tag", type=str, default="test")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--runtime", action="store_true")  # measure runtime mode
+    parser.add_argument("--runtime_num_samples", type=int, default=20)
+    parser.add_argument("--runtime_num_repeats", type=int, default=5)
     #
     parser.add_argument("--beam_width", type=int, default=None)
     parser.add_argument("--len_weight", type=float, default=None)
