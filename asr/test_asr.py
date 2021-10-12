@@ -130,7 +130,7 @@ def main(args):
     )
     if data_path is None:
         data_path = params.test_path
-    logging.info(f"data: {data_path}")
+    logging.info(f"test data: {data_path}")
     dataset = ASRDataset(params, rel_to_abs_path(data_path), phase="test")
     dataloader = DataLoader(
         dataset=dataset,
@@ -165,10 +165,10 @@ def main(args):
             )
             runtime = time.time() - start_time
             runtime /= args.runtime_num_samples
-            logging.info(f"Run {(j+1):d} runtime: {runtime:.5f} / hyp")
+            logging.info(f"Run {(j+1):d} runtime: {runtime:.5f}sec / utt")
             runtimes.append(runtime)
 
-        print(f"Averaged runtime {np.mean(runtimes):.5f} on {device.type}")
+        print(f"Averaged runtime {np.mean(runtimes):.5f}sec on {device.type}")
         return
 
     results = test(

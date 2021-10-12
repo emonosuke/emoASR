@@ -23,10 +23,12 @@ from utils.path_utils import (
     get_model_optim_paths2,
     rel_to_abs_path,
 )
+from utils.vocab import Vocab
 
-from asr.dataset2 import ASRBatchSampler, ASRDataset
-from asr.models2.asr import ASR
-from asr.optimizer2 import ScheduledOptimizer, optimizer_to
+from asr.datasets import ASRBatchSampler, ASRDataset
+from asr.evaluator.edit_dist import compute_wers_id
+from asr.modeling.asr import ASR
+from asr.optimizers import ScheduledOptimizer, optimizer_to
 
 # Reproducibility
 torch.manual_seed(0)
@@ -132,6 +134,44 @@ def train(model, optimizer, dataloader, params, device, epoch):
             loss_dict_sum = {}
 
 
+def valid_step(model, data, device):
+    xs = data["xs"].to(device)
+    xlens = data["xlens"].to(device)
+    ys = data["ys"]
+    ylens = data["ylens"]
+
+    if torch.cuda.device_count() > 1:
+        hyps, _ = model.module.decode(xs, xlens, beam_width=0, len_weight=0)
+    else:
+        hyps, _ = model.decode(xs, xlens, beam_width=0, len_weight=0)
+
+    refs = [y[:ylen].tolist() for y, ylen in zip(ys, ylens)]
+
+    return hyps, refs
+
+
+def valid(model, params, device, epoch):
+    vocab = Vocab(vocab_path=rel_to_abs_path(params.vocab_path))
+    dataset_val = ASRDataset(params, rel_to_abs_path(params.dev_path), phase="valid")
+    dataloader_val = DataLoader(
+        dataset=dataset_val,
+        batch_size=params.batch_size,
+        collate_fn=dataset_val.collate_fn,
+        num_workers=1,
+    )
+    logging.info(f"dev data: {params.dev_path} ({len(dataloader_val)} steps)")
+
+    hyps_val, refs_val = [], []
+    for data in dataloader_val:
+        hyps, refs = valid_step(model, data, device)
+        hyps_val.extend(hyps)
+        refs_val.extend(refs)
+    assert len(hyps_val) == len(refs_val)
+
+    wer_val = compute_wers_id(hyps_val, refs_val, vocab)
+    logging.info(f"*** epoch = {(epoch+1):d}: valid WER = {wer_val:.2f}")
+
+
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     params = load_config(args.conf)
@@ -158,6 +198,7 @@ def main(args):
     commit_hash = git.Repo(search_parent_directories=True).head.object.hexsha
     logging.info(f"commit: {commit_hash}")
     logging.info(f"conda env: {os.environ['CONDA_DEFAULT_ENV']}")
+    logging.info(f"torch version: {torch.__version__}")
 
     model = ASR(params)
 
@@ -194,7 +235,7 @@ def main(args):
     model.train()
     optimizer_to(optimizer, device)
 
-    logging.info(f"data: {params.train_path}")
+    logging.info(f"train data: {params.train_path}")
     dataset = ASRDataset(params, rel_to_abs_path(params.train_path), phase="train")
 
     if params.train_data_shuffle:
@@ -227,7 +268,15 @@ def main(args):
         logging.info(f"epoch = {(epoch+1):>2} elapsed time: {elapsed_time}")
         logging.info(f"time to end: {end_time}")
 
-        # TODO: validation
+        logging.info("validation start")
+        model.eval()
+        try:
+            valid(model, params, device, epoch)
+        except:
+            logging.error("ERROR occurs in validation (ignore)", exc_info=True)
+        logging.info("validation end")
+        # be sure to be training mode
+        model.train()
 
         if epoch == 0 or (epoch + 1) % params.save_step == 0:
             if args.debug:
