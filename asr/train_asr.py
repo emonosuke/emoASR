@@ -26,7 +26,7 @@ from utils.path_utils import (
 from utils.vocab import Vocab
 
 from asr.datasets import ASRBatchSampler, ASRDataset
-from asr.evaluator.edit_dist import compute_wers_id
+from asr.evaluators import compute_wers
 from asr.modeling.asr import ASR
 from asr.optimizers import ScheduledOptimizer, optimizer_to
 
