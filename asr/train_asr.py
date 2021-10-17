@@ -17,12 +17,8 @@ from torch.utils.data import DataLoader
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
-from utils.io_utils import load_config
-from utils.path_utils import (
-    get_log_save_paths2,
-    get_model_optim_paths2,
-    rel_to_abs_path,
-)
+from utils.configure import load_config
+from utils.paths import get_log_save_paths, get_model_optim_paths, rel_to_abs_path
 from utils.vocab import Vocab
 
 from asr.datasets import ASRBatchSampler, ASRDataset
@@ -176,7 +172,7 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     params = load_config(args.conf)
 
-    log_dir, save_format, optim_save_format = get_log_save_paths2(args.conf)
+    log_dir, save_format, optim_save_format = get_log_save_paths(args.conf)
 
     if args.debug:
         logging.basicConfig(
@@ -202,7 +198,7 @@ def main(args):
 
     model = ASR(params)
 
-    model_path, optim_path, startep = get_model_optim_paths2(
+    model_path, optim_path, startep = get_model_optim_paths(
         args.conf,
         resume=args.resume,
         model_path=params.model_path,

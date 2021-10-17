@@ -16,19 +16,14 @@ from torch.utils.data import DataLoader
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
+from utils.configure import load_config
 from utils.converters import ints2str
-from utils.io_utils import load_config
-from utils.logger import insert_comment
-from utils.path_utils import (
-    get_eval_path,
-    get_model_path2,
-    get_results_dir2,
-    rel_to_abs_path,
-)
+from utils.log import insert_comment
+from utils.paths import get_eval_path, get_model_path, get_results_dir, rel_to_abs_path
 from utils.vocab import Vocab
 
 from asr.datasets import ASRDataset
-from asr.evaluator.eval_wer import compute_wers2
+from asr.evaluators import compute_wers
 from asr.modeling.asr import ASR
 
 # Reproducibility
@@ -115,7 +110,7 @@ def main(args):
     logging.info(f"commit: {commit_hash}")
     logging.info(f"conda env: {os.environ['CONDA_DEFAULT_ENV']}")
 
-    model_path = get_model_path2(args.conf, args.ep)
+    model_path = get_model_path(args.conf, args.ep)
     logging.info(f"model: {model_path}")
     model = ASR(params, phase="test")
     model.load_state_dict(torch.load(model_path, map_location=device))
@@ -141,7 +136,7 @@ def main(args):
     )
     vocab = Vocab(rel_to_abs_path(params.vocab_path))
 
-    results_dir = get_results_dir2(args.conf)
+    results_dir = get_results_dir(args.conf)
     os.makedirs(results_dir, exist_ok=True)
     result_file = f"result_{data_tag}_beam{beam_width}_len{len_weight}_ctc{decode_ctc_weight}_ep{args.ep}.tsv"
     result_path = os.path.join(results_dir, result_file)
@@ -178,7 +173,7 @@ def main(args):
     data = pd.DataFrame(results, columns=["utt_id", "token_id", "text", "reftext"])
     data.to_csv(result_path, sep="\t", index=False)
 
-    wer_all, wer_detail = compute_wers2(data)
+    wer_all, wer_detail = compute_wers(data)
     logging.info(wer_detail)
     insert_comment(result_path, wer_detail)
 
