@@ -18,11 +18,12 @@ EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
 from utils.configure import load_config
-from utils.paths import get_log_save_paths, get_model_optim_paths, rel_to_abs_path
+from utils.paths import (get_log_save_paths, get_model_optim_paths,
+                         rel_to_abs_path)
 from utils.vocab import Vocab
 
 from asr.datasets import ASRBatchSampler, ASRDataset
-from asr.evaluators import compute_wers
+from asr.metrics import compute_wers
 from asr.modeling.asr import ASR
 from asr.optimizers import ScheduledOptimizer, optimizer_to
 
@@ -50,6 +51,7 @@ def train_step(
         xs, xlens, ys, ylens, ys_in, ys_out, soft_labels=soft_labels
     )
 
+    # reduction for devices
     if torch.cuda.device_count() > 1:
         loss = loss.mean()
         loss_dict = {
@@ -87,7 +89,6 @@ def train(model, optimizer, dataloader, params, device, epoch):
     optimizer.update_epoch()
 
     step = 0
-
     loss_dict_sum = {}
 
     for accum_step, data in enumerate(dataloader):
@@ -147,7 +148,7 @@ def valid_step(model, data, device):
 
 
 def valid(model, params, device, epoch):
-    vocab = Vocab(vocab_path=rel_to_abs_path(params.vocab_path))
+    vocab = Vocab(vocab_path=rel_to_abs_path(params.vocab_path), size=params.dev_size)
     dataset_val = ASRDataset(params, rel_to_abs_path(params.dev_path), phase="valid")
     dataloader_val = DataLoader(
         dataset=dataset_val,
@@ -190,14 +191,12 @@ def main(args):
     logging.info(
         f"server: {socket.gethostname()} | gpu: {os.getenv('CUDA_VISIBLE_DEVICES')} | pid: {os.getpid():d}"
     )
-    # logging.info(f"torch: {torch.__version__}")
     commit_hash = git.Repo(search_parent_directories=True).head.object.hexsha
     logging.info(f"commit: {commit_hash}")
     logging.info(f"conda env: {os.environ['CONDA_DEFAULT_ENV']}")
     logging.info(f"torch version: {torch.__version__}")
 
     model = ASR(params)
-
     model_path, optim_path, startep = get_model_optim_paths(
         args.conf,
         resume=args.resume,
@@ -205,12 +204,12 @@ def main(args):
         optim_path=params.optim_path,
         start_epoch=params.startep,
     )
-
     if model_path:
         model.load_state_dict(torch.load(model_path, map_location=device))
         logging.info(f"model: {model_path}")
     else:
         logging.info(f"model: scratch")
+
     optimizer_base = Adam(model.parameters(), lr=0, weight_decay=params.weight_decay)
     optimizer = ScheduledOptimizer(optimizer_base, params)
     if optim_path:
@@ -226,7 +225,6 @@ def main(args):
         model = torch.nn.DataParallel(model, device_ids=device_ids)
     else:
         num_gpus = 1
-
     model.to(device)
     model.train()
     optimizer_to(optimizer, device)

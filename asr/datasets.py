@@ -72,8 +72,8 @@ class ASRDataset(Dataset):
 
         xlen = x.size(0)  # `xlen` is based on length after frame stacking
 
-        ids = str2ints(self.data.loc[idx]["token_id"])
-        y = torch.tensor(ids, dtype=torch.long)  # int64
+        token_id = str2ints(self.data.loc[idx]["token_id"])
+        y = torch.tensor(token_id, dtype=torch.long)  # int64
         ylen = y.size(0)
 
         # for knowledge distillation
@@ -122,8 +122,7 @@ class ASRDataset(Dataset):
         # add <sos> and <eos> here
         ys_eos_list = [[eos_id] + y.tolist() + [eos_id] for y in ys_list]
 
-        # ys_in = [[<eos>, y_1, ..., y_n], ...]
-        # ys_out = [[y_1, ..., y_n, <eos>], ...]
+        # ys_in = [[<eos>, y_1, ..., y_n], ...], ys_out = [[y_1, ..., y_n, <eos>], ...]
         ys_in = [torch.tensor(y[:-1], dtype=torch.long) for y in ys_eos_list]
         ys_out = [torch.tensor(y[1:], dtype=torch.long) for y in ys_eos_list]
 

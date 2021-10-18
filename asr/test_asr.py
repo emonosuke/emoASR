@@ -23,7 +23,7 @@ from utils.paths import get_eval_path, get_model_path, get_results_dir, rel_to_a
 from utils.vocab import Vocab
 
 from asr.datasets import ASRDataset
-from asr.evaluators import compute_wers
+from asr.metrics import compute_wers
 from asr.modeling.asr import ASR
 
 # Reproducibility
