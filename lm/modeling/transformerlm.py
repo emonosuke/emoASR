@@ -8,15 +8,14 @@ EMOASR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")
 sys.path.append(EMOASR_DIR)
 
 from asr.models.model_utils import make_nopad_mask
-from utils.io_utils import load_config
 
 from lm.models.transformers.configuration_transformers import TransformersConfig
 from lm.models.transformers.modeling_bert import BertForMaskedLM
 
 
-class BERTMaskedLM(nn.Module):
+class TransformerLM(nn.Module):
     def __init__(self, params):
-        super(BERTMaskedLM, self).__init__()
+        super(TransformerLM, self).__init__()
         config = TransformersConfig(
             vocab_size=params.vocab_size,
             hidden_size=params.hidden_size,
@@ -25,7 +24,7 @@ class BERTMaskedLM(nn.Module):
             intermediate_size=params.intermediate_size,
             max_position_embeddings=params.max_seq_len,
         )
-        self.bert = BertForMaskedLM(config)
+        self.transformer = BertForMaskedLM(config)
 
     def forward(self, ys, ylens=None, labels=None):
         if ylens is None:
@@ -36,11 +35,14 @@ class BERTMaskedLM(nn.Module):
 
         loss = None
         loss_dict = {}
+        # NOTE: causal attention mask
         if labels is None:
-            (logits,) = self.bert(ys, attention_mask=attention_mask)
+            (logits,) = self.transformer(ys, attention_mask=attention_mask, causal=True)
             return logits
 
-        loss, logits = self.bert(ys, attention_mask=attention_mask, labels=labels)
+        loss, logits = self.transformer(
+            ys, attention_mask=attention_mask, causal=True, labels=labels
+        )
         loss_dict["loss_total"] = loss
 
         return loss, loss_dict, logits
@@ -49,4 +51,4 @@ class BERTMaskedLM(nn.Module):
         try:
             super().load_state_dict(state_dict)
         except:
-            self.bert.load_state_dict(state_dict)
+            self.transformer.load_state_dict(state_dict)

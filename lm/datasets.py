@@ -20,9 +20,10 @@ eos_id = 2
 
 class LMDataset(Dataset):
     def __init__(self, params, data_path, phase="train", size=-1):
-        self.data = pd.read_table(data_path)[["utt_id", "token_id"]]
+        self.data = pd.read_table(data_path, comment="#")[["utt_id", "token_id"]]
         self.lm_type = params.lm_type
         self.add_sos_eos = params.add_sos_eos
+        self.phase = phase
 
         global eos_id
         eos_id = params.eos_id
@@ -53,18 +54,22 @@ class LMDataset(Dataset):
 
         y = torch.tensor(token_id, dtype=torch.long)
 
-        if self.lm_type == "bert":
-            y_in, label = create_masked_lm_label(
-                y,
-                mask_id=self.mask_id,
-                num_to_mask=self.num_to_mask,
-                mask_proportion=self.mask_proportion,
-                random_num_to_mask=self.random_num_to_mask,
-            )
-        elif self.lm_type == "transformer":
-            assert len(y) > 1
-            y_in = y[:-1]
-            label = y[1:]
+        if self.phase == "train":
+            if self.lm_type == "bert":
+                y_in, label = create_masked_lm_label(
+                    y,
+                    mask_id=self.mask_id,
+                    num_to_mask=self.num_to_mask,
+                    mask_proportion=self.mask_proportion,
+                    random_num_to_mask=self.random_num_to_mask,
+                )
+            elif self.lm_type == "transformer":
+                assert len(y) > 1
+                y_in = y[:-1]
+                label = y[1:]
+        else:
+            y_in = y
+            label = None
 
         ylen = y_in.size(0)
 
@@ -79,7 +84,8 @@ class LMDataset(Dataset):
         ret["utt_ids"] = list(utt_ids)
         ret["ys_in"] = pad_sequence(ys_in, batch_first=True, padding_value=eos_id)
         ret["ylens"] = torch.tensor(ylens)
-        ret["labels"] = pad_sequence(labels, batch_first=True, padding_value=-100)
+        if labels[0] is not None:
+            ret["labels"] = pad_sequence(labels, batch_first=True, padding_value=-100)
 
         return ret
 

@@ -9,6 +9,8 @@ EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")
 sys.path.append(EMOASR_ROOT)
 
 from lm.modeling.bert import BERTMaskedLM
+from lm.modeling.electra import ELECTRAModel, PELECTRAModel
+from lm.modeling.transformerlm import TransformerLM
 
 
 class LM(nn.Module):
@@ -22,6 +24,10 @@ class LM(nn.Module):
             self.lm = BERTMaskedLM(params)
         elif self.lm_type == "transformer":
             self.lm = TransformerLM(params)
+        elif self.lm_type == "electra":
+            self.lm = ELECTRAModel(params)
+        elif self.lm_type == "pelectra":
+            self.lm = PELECTRAModel(params)
 
         num_params = sum(p.numel() for p in self.parameters())
         num_params_trainable = sum(

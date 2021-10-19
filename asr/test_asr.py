@@ -163,7 +163,7 @@ def main(args):
             logging.info(f"Run {(j+1):d} runtime: {runtime:.5f}sec / utt")
             runtimes.append(runtime)
 
-        print(f"Averaged runtime {np.mean(runtimes):.5f}sec on {device.type}")
+        logging.info(f"Averaged runtime {np.mean(runtimes):.5f}sec on {device.type}")
         return
 
     results = test(
