@@ -10,9 +10,43 @@ def to_onehot_lsm(
     labels: torch.tensor, num_classes: int, lsm_prob: float = 0.1
 ) -> torch.tensor:
     onehot = to_onehot(labels, num_classes)
-    onehot_ls = (1 - lsm_prob) * onehot + (lsm_prob / (num_classes - 1)) * (1 - onehot)
+    onehot_lsm = (1 - lsm_prob) * onehot + (lsm_prob / (num_classes - 1)) * (1 - onehot)
 
-    return onehot_ls
+    return onehot_lsm
+
+
+class LabelSmoothingLoss(nn.Module):
+    def __init__(
+        self, vocab_size, lsm_prob=0, normalize_length=False, normalize_batch=True
+    ):
+        super(LabelSmoothingLoss, self).__init__()
+
+        self.vocab_size = vocab_size
+        self.lsm_prob = lsm_prob
+        self.normalize_length = normalize_length
+        self.normalize_batch = normalize_batch
+
+    def forward(self, logits, ys, ylens):
+        bs = logits.size(0)
+        loss = 0
+        onehot_lsm = to_onehot_lsm(ys, self.vocab_size, self.lsm_prob)
+
+        for b in range(bs):
+            ylen = ylens[b]
+
+            loss_b = torch.sum(
+                log_softmax(logits[b, :ylen], dim=-1) * onehot_ls[b, :ylen]
+            )
+
+            if self.normalize_length:
+                loss_b /= ylen
+
+            loss -= loss_b
+
+        if self.normalize_batch:
+            loss /= bs
+
+        return loss
 
 
 class DistillLoss(nn.Module):
@@ -125,7 +159,6 @@ class RNNTWordDistillLoss(nn.Module):
     def forward(self, logits, soft_labels, xlens, ylens):
         # logits: (B, T, L + 1, vocab)
         bs = logits.size(0)
-
         loss = 0
 
         for b in range(bs):
@@ -135,12 +168,13 @@ class RNNTWordDistillLoss(nn.Module):
                 0
             )  # (L, vocab) -> (1, L, vocab)
 
-            loss -= torch.sum(
+            loss_b = torch.sum(
                 soft_label_ext * torch.log_softmax(logits[b, :xlen, :ylen], dim=-1)
             )
 
             if self.normalize_length:
-                loss /= xlen * ylen
+                loss_b /= xlen * ylen
+            loss -= loss_b
 
         if self.normalize_batch:
             loss /= bs
@@ -170,14 +204,15 @@ class RNNTAlignDistillLoss(nn.Module):
             align = aligns[b]
 
             for u in range(ylen):
-                loss -= torch.sum(
+                loss_u = torch.sum(
                     soft_labels[b, u]
                     * torch.log_softmax(logits[b, align[u], u], dim=-1),
                     dim=-1,
                 )
 
             if self.normalize_length:
-                loss /= ylen
+                loss_u /= ylen
+            loss -= loss_u
 
         if self.normalize_batch:
             loss /= bs
