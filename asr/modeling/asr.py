@@ -10,6 +10,7 @@ sys.path.append(EMOASR_ROOT)
 
 from asr.modeling.decoders.ctc import CTCDecoder
 from asr.modeling.decoders.rnn_transducer import RNNTDecoder
+from asr.modeling.decoders.transformer import TransformerDecoder
 from asr.modeling.encoders.rnn import RNNEncoder
 from asr.modeling.encoders.transformer import TransformerEncoder
 
@@ -32,6 +33,9 @@ class ASR(nn.Module):
             self.decoder = CTCDecoder(params)
         elif self.decoder_type == "rnn_transducer":
             self.decoder = RNNTDecoder(params, phase)
+        elif self.decoder_type == "transformer":
+            self.decoder = TransformerDecoder(params)
+        # TODO: LAS
 
         num_params = sum(p.numel() for p in self.parameters())
         num_params_trainable = sum(

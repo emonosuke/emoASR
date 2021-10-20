@@ -28,14 +28,14 @@ class TransformerEncoder(nn.Module):
         self.pe = PositionalEncoder(input_size, dropout_rate=params.dropout_enc_rate)
 
         self.transformers = nn.ModuleList()
-        for _ in range(params.enc_num_layers):
+        for _ in range(self.enc_num_layers):
             self.transformers += [
                 TransformerEncoderLayer(
-                    params.enc_num_attention_heads,
-                    params.enc_hidden_size,
-                    params.enc_intermediate_size,
-                    params.dropout_enc_rate,
-                    params.dropout_attn_rate,
+                    enc_num_attention_heads=params.enc_num_attention_heads,
+                    enc_hidden_size=params.enc_hidden_size,
+                    enc_itermediate_size=params.enc_intermediate_size,
+                    dropout_enc_rate=params.dropout_enc_rate,
+                    dropout_attn_rate=params.dropout_attn_rate,
                 )
             ]
 

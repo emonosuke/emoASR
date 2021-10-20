@@ -134,3 +134,46 @@ class TransformerEncoderLayer(nn.Module):
         x = residual + self.dropout(self.feed_forward(x))
 
         return x, mask
+
+
+class TransformerDecoderLayer(nn.Module):
+    def __init__(
+        self,
+        dec_num_attention_heads,
+        dec_hidden_size,
+        dec_intermediate_size,
+        dropout_dec_rate,
+        dropout_attn_rate,
+    ):
+        super(TransformerDecoderLayer, self).__init__()
+        self.dec_hidden_size = dec_hidden_size
+        self.self_attn = MultiHeadedAttention(
+            dec_num_attention_heads, dec_hidden_size, dropout_attn_rate
+        )
+        self.src_attn = MultiHeadedAttention(
+            dec_num_attention_heads, dec_hidden_size, dropout_attn_rate
+        )
+        self.feed_forward = PositionwiseFeedForward(
+            dec_hidden_size, dec_intermediate_size, dropout_dec_rate
+        )
+        self.norm1 = nn.LayerNorm(dec_hidden_size, eps=1e-12)
+        self.norm2 = nn.LayerNorm(dec_hidden_size, eps=1e-12)
+        self.norm3 = nn.LayerNorm(dec_hidden_size, eps=1e-12)
+        self.dropout = nn.Dropout(dropout_dec_rate)
+
+    def forward(self, x, mask, memory, memory_mask):
+        residual = x
+        x = self.norm1(x)  # normalize before
+        x_q = x
+        x_q_mask = mask
+        x = residual + self.dropout(self.self_attn(x_q, x, x, x_q_mask))
+
+        residual = x
+        x = self.norm2(x)  # normalize before
+        x = residual + self.dropout(self.src_attn(x, memory, memory, memory_mask))
+
+        residual = x
+        x = self.norm3(x)  # normalize before
+        x = residual + self.dropout(self.feed_forward(x))
+
+        return x, mask, memory, memory_mask

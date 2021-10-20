@@ -33,14 +33,11 @@ class LabelSmoothingLoss(nn.Module):
 
         for b in range(bs):
             ylen = ylens[b]
-
             loss_b = torch.sum(
-                log_softmax(logits[b, :ylen], dim=-1) * onehot_ls[b, :ylen]
+                torch.log_softmax(logits[b, :ylen], dim=-1) * onehot_lsm[b, :ylen]
             )
-
             if self.normalize_length:
                 loss_b /= ylen
-
             loss -= loss_b
 
         if self.normalize_batch:
@@ -49,7 +46,7 @@ class LabelSmoothingLoss(nn.Module):
         return loss
 
 
-class DistillLoss(nn.Module):
+class WordDistillLoss(nn.Module):
     def __init__(self):
         pass
 
