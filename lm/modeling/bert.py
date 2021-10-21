@@ -7,11 +7,11 @@ import torch.nn as nn
 EMOASR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")
 sys.path.append(EMOASR_DIR)
 
-from asr.models.model_utils import make_nopad_mask
+from asr.modeling.model_utils import make_nopad_mask
 from utils.io_utils import load_config
 
-from lm.models.transformers.configuration_transformers import TransformersConfig
-from lm.models.transformers.modeling_bert import BertForMaskedLM
+from lm.modeling.transformers.configuration_transformers import TransformersConfig
+from lm.modeling.transformers.modeling_bert import BertForMaskedLM
 
 
 class BERTMaskedLM(nn.Module):

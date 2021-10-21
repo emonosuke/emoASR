@@ -31,7 +31,7 @@ class LMDataset(Dataset):
         if size > 0:
             self.data = self.data[:size]
 
-        if self.lm_type == "bert":
+        if self.lm_type in ["bert", "electra"]:
             self.mask_id = params.mask_id
             # either `num_to_mask` or `mask_proportion` must be specified
             assert hasattr(params, "num_to_mask") ^ hasattr(params, "mask_proportion")
@@ -55,7 +55,7 @@ class LMDataset(Dataset):
         y = torch.tensor(token_id, dtype=torch.long)
 
         if self.phase == "train":
-            if self.lm_type == "bert":
+            if self.lm_type in ["bert", "electra"]:
                 y_in, label = create_masked_lm_label(
                     y,
                     mask_id=self.mask_id,
