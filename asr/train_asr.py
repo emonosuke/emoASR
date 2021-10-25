@@ -147,7 +147,8 @@ def valid_step(model, data, device):
 
 
 def valid(model, params, device, epoch):
-    vocab = Vocab(vocab_path=rel_to_abs_path(params.vocab_path), size=params.dev_size)
+    dev_size = params.dev_size if hasattr(params, "dev_size") else -1
+    vocab = Vocab(vocab_path=rel_to_abs_path(params.vocab_path), size=dev_size)
     dataset_val = ASRDataset(params, rel_to_abs_path(params.dev_path), phase="valid")
     dataloader_val = DataLoader(
         dataset=dataset_val,

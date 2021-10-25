@@ -16,8 +16,9 @@ from torch.utils.data import DataLoader
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
+from utils.average_checkpoints import model_average
 from utils.configure import load_config
-from utils.converters import ints2str
+from utils.converters import ints2str, strip_eos
 from utils.log import insert_comment
 from utils.paths import get_eval_path, get_model_path, get_results_dir, rel_to_abs_path
 from utils.vocab import Vocab
@@ -49,6 +50,7 @@ def test(
     len_p,
     decode_ctc_weight,
     device,
+    eos_id=2,
     num_samples=-1,
 ):
     rows = []  # utt_id, token_id, text, reftext
@@ -63,8 +65,9 @@ def test(
         text = ""
 
         if len(hyps) > 0:
-            token_id = ints2str(hyps[0])
-            text = vocab.ids2text(hyps[0])
+            # NOTE: strip <eos> (or <sos>) here
+            token_id = ints2str(strip_eos(hyps[0], eos_id))
+            text = vocab.ids2text(strip_eos(hyps[0], eos_id))
             rows.append([utt_id, token_id, text, reftext])
 
         logging.debug(f"{utt_id}({(i+1):d}/{len(dataloader):d}): {text}")
@@ -111,6 +114,9 @@ def main(args):
     logging.info(f"conda env: {os.environ['CONDA_DEFAULT_ENV']}")
 
     model_path = get_model_path(args.conf, args.ep)
+    if not os.path.exists(model_path):
+        model_average(args.conf, args.ep)
+
     logging.info(f"model: {model_path}")
     model = ASR(params, phase="test")
     model.load_state_dict(torch.load(model_path, map_location=device))
@@ -156,6 +162,7 @@ def main(args):
                 len_weight,
                 decode_ctc_weight,
                 device,
+                eos_id=params.eos_id,
                 num_samples=args.runtime_num_samples,
             )
             runtime = time.time() - start_time
