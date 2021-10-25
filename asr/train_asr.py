@@ -18,8 +18,7 @@ EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
 from utils.configure import load_config
-from utils.paths import (get_log_save_paths, get_model_optim_paths,
-                         rel_to_abs_path)
+from utils.paths import get_log_save_paths, get_model_optim_paths, rel_to_abs_path
 from utils.vocab import Vocab
 
 from asr.datasets import ASRBatchSampler, ASRDataset
@@ -165,7 +164,7 @@ def valid(model, params, device, epoch):
         refs_val.extend(refs)
     assert len(hyps_val) == len(refs_val)
 
-    wer_val = compute_wers_id(hyps_val, refs_val, vocab)
+    wer_val, _ = compute_wers(hyps_val, refs_val, vocab)
     logging.info(f"*** epoch = {(epoch+1):d}: valid WER = {wer_val:.2f}")
 
 

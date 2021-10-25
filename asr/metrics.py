@@ -1,13 +1,20 @@
-"""
+""" WER computation
 
 Reference
     - https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/evaluators/edit_distance.py
 """
 
+import argparse
 import os
 import sys
 
 import numpy as np
+import pandas as pd
+
+EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
+sys.path.append(EMOASR_ROOT)
+
+from utils.log import insert_comment
 
 
 def compute_wer(hyp, ref, cer=False):
@@ -98,7 +105,7 @@ def compute_wer(hyp, ref, cer=False):
     return wer, wer_dict
 
 
-def compute_wers(hyps, refs, vocab=None):
+def compute_wers(hyps: list, refs: list, vocab=None):
     n_sub_total, n_ins_total, n_del_total, n_ref_total = 0, 0, 0, 0
 
     for hyp, ref in zip(hyps, refs):
@@ -113,14 +120,51 @@ def compute_wers(hyps, refs, vocab=None):
         n_del_total += wer_dict["n_del"]
         n_ref_total += wer_dict["n_ref"]
 
-    wer_total = ((n_sub_total + n_ins_total + n_del_total) / n_ref_total) * 100
+    wer = ((n_sub_total + n_ins_total + n_del_total) / n_ref_total) * 100
+    wer_dict = {
+        "wer": wer,
+        "n_sub": n_sub_total,
+        "n_ins": n_ins_total,
+        "n_del": n_del_total,
+        "n_ref": n_ref_total,
+    }
 
-    return wer_total
+    return wer, wer_dict
+
+
+def compute_wers_df(data):
+    n_sub_total, n_ins_total, n_del_total, n_ref_total = 0, 0, 0, 0
+
+    for row in data.itertuples():
+        hyp = row.text.split() if not pd.isna(row.text) else []
+        ref = row.reftext.split()
+
+        _, wer_dict = compute_wer(hyp, ref)
+
+        n_sub_total += wer_dict["n_sub"]
+        n_ins_total += wer_dict["n_ins"]
+        n_del_total += wer_dict["n_del"]
+        n_ref_total += wer_dict["n_ref"]
+
+    wer = ((n_sub_total + n_ins_total + n_del_total) / n_ref_total) * 100
+    wer_dict = {
+        "wer": wer,
+        "n_sub": n_sub_total,
+        "n_ins": n_ins_total,
+        "n_del": n_del_total,
+        "n_ref": n_ref_total,
+    }
+
+    return wer, wer_dict
 
 
 if __name__ == "__main__":
-    hyp = ["ab", "cd", "efg", "h", "ij", "op"]
-    ref = ["ab", "c", "defg", "h", "ij", "klm", "op"]
+    parser = argparse.ArgumentParser()
+    parser.add_argument("tsv_path", type=str)
+    args = parser.parse_args()
 
-    print(compute_wer(hyp, ref))
-    print(compute_wer(hyp, ref, cer=True))
+    data = pd.read_table(args.tsv_path, comment="#")
+    wer, wer_dict = compute_wers_df(data)
+    wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
+    print(wer_info)
+    insert_comment(args.tsv_path, wer_info)

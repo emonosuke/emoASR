@@ -173,11 +173,12 @@ def main(args):
     data = pd.DataFrame(results, columns=["utt_id", "token_id", "text", "reftext"])
     data.to_csv(result_path, sep="\t", index=False)
 
-    wer_all, wer_detail = compute_wers(data)
-    logging.info(wer_detail)
-    insert_comment(result_path, wer_detail)
+    wer, wer_dict = compute_wers(data)
+    wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
+    logging.info(wer_info)
+    insert_comment(result_path, wer_info)
 
-    return wer_all, wer_detail
+    return wer, wer_info
 
 
 if __name__ == "__main__":
