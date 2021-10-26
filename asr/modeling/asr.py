@@ -1,3 +1,6 @@
+""" End-to-End ASR modeling
+"""
+
 import logging
 import os
 import sys
@@ -76,7 +79,6 @@ class ASR(nn.Module):
                 hyps, scores = self.decoder.beam_search(
                     eouts, elens, beam_width, len_weight
                 )
-
         return hyps, scores
 
     def forced_align(self, xs, xlens, decode_ctc_weight=0):

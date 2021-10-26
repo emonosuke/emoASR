@@ -3,6 +3,7 @@
 
 import os
 import sys
+from operator import itemgetter
 
 import torch
 import torch.nn as nn
@@ -127,9 +128,10 @@ class TransformerDecoder(nn.Module):
                 ys_in = torch.tensor([beam["hyp"]]).to(eouts.device)
                 ylens_in = torch.tensor([i + 1]).to(eouts.device)
 
-                scores = torch.log_softmax(
+                scores_asr = torch.log_softmax(
                     self.forward_one_step(ys_in, ylens_in, eouts), dim=-1
                 )  # (1, vocab)
+                scores = scores_asr
 
                 scores_topk, ids_topk = torch.topk(scores, beam_width, dim=1)
 
@@ -153,9 +155,7 @@ class TransformerDecoder(nn.Module):
                         continue
 
                     # add length penalty
-                    score = beam["score"] + len_weight * len(
-                        strip_eos(beam["hyp"], self.eos_id)
-                    )
+                    score = beam["score"] + len_weight * len(beam["hyp"])
 
                     results.append({"hyp": beam["hyp"], "score": score})
 

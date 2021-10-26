@@ -24,7 +24,7 @@ from utils.paths import get_eval_path, get_model_path, get_results_dir, rel_to_a
 from utils.vocab import Vocab
 
 from asr.datasets import ASRDataset
-from asr.metrics import compute_wers
+from asr.metrics import compute_wers_df
 from asr.modeling.asr import ASR
 
 # Reproducibility
@@ -64,11 +64,16 @@ def test(
         )
         text = ""
 
-        if len(hyps) > 0:
+        if len(hyps) < 1:
+            token_id = None
+            text = ""
+            logging.warning(f"cannot decode {utt_id}")
+        else:
             # NOTE: strip <eos> (or <sos>) here
             token_id = ints2str(strip_eos(hyps[0], eos_id))
             text = vocab.ids2text(strip_eos(hyps[0], eos_id))
-            rows.append([utt_id, token_id, text, reftext])
+
+        rows.append([utt_id, token_id, text, reftext])
 
         logging.debug(f"{utt_id}({(i+1):d}/{len(dataloader):d}): {text}")
 
@@ -147,6 +152,8 @@ def main(args):
     result_file = f"result_{data_tag}_beam{beam_width}_len{len_weight}_ctc{decode_ctc_weight}_ep{args.ep}.tsv"
     result_path = os.path.join(results_dir, result_file)
     logging.info(f"result: {result_path}")
+    if os.path.exists(result_path):
+        logging.warning(f"result already exists! (will be overwritten)")
 
     if args.runtime:
         torch.set_num_threads(1)
@@ -180,7 +187,7 @@ def main(args):
     data = pd.DataFrame(results, columns=["utt_id", "token_id", "text", "reftext"])
     data.to_csv(result_path, sep="\t", index=False)
 
-    wer, wer_dict = compute_wers(data)
+    wer, wer_dict = compute_wers_df(data)
     wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
     logging.info(wer_info)
     insert_comment(result_path, wer_info)
