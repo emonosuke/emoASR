@@ -27,12 +27,14 @@ class BERTMaskedLM(nn.Module):
         )
         self.bert = BertForMaskedLM(config)
 
-    def forward(self, ys, ylens=None, labels=None):
+    def forward(self, ys, ylens=None, labels=None, ps=None, plens=None):
         if ylens is None:
             attention_mask = None
         else:
             attention_mask = make_nopad_mask(ylens).float().to(ys.device)
-            ys = ys[:, : max(ylens)]  # DataParallel
+            # DataParallel
+            ys = ys[:, : max(ylens)]
+            labels = labels[:, : max(ylens)]
 
         loss = None
         loss_dict = {}
@@ -43,7 +45,7 @@ class BERTMaskedLM(nn.Module):
         loss, logits = self.bert(ys, attention_mask=attention_mask, labels=labels)
         loss_dict["loss_total"] = loss
 
-        return loss, loss_dict, logits
+        return loss, loss_dict
 
     def load_state_dict(self, state_dict):
         try:

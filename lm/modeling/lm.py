@@ -1,3 +1,6 @@
+""" Language modeling
+"""
+
 import logging
 import os
 import sys
@@ -37,8 +40,8 @@ class LM(nn.Module):
             f"LM model #parameters: {num_params} ({num_params_trainable} trainable)"
         )
 
-    def forward(self, ys, ylens, labels):
-        return self.lm(ys, ylens, labels)
+    def forward(self, ys, ylens, labels, ps, plens):
+        return self.lm(ys, ylens, labels, ps, plens)
 
     def load_state_dict(self, state_dict):
         try:

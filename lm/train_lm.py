@@ -26,7 +26,7 @@ from asr.optimizers import (
 from utils.configure import load_config
 from utils.paths import get_log_save_paths, get_model_optim_paths, rel_to_abs_path
 
-from lm.datasets import LMDataset
+from lm.datasets import LMDataset, P2WDataset
 from lm.modeling.lm import LM
 
 # Reproducibility
@@ -45,7 +45,11 @@ def train_step(
     ylens = data["ylens"].to(device)
     labels = data["labels"].to(device)
 
-    loss, loss_dict, _ = model(ys_in, ylens, labels)
+    # for `pelectra`
+    ps = data["ps"].to(device) if "ps" in data else None
+    plens = data["plens"].to(device) if "plens" in data else None
+
+    loss, loss_dict = model(ys_in, ylens, labels, ps, plens)
 
     # reduction for devices
     if torch.cuda.device_count() > 1:
@@ -213,7 +217,12 @@ def main(args):
             random.shuffle(train_files)
             for step_ds, train_file in enumerate(train_files):
                 train_file_path = os.path.join(train_path, train_file)
-                dataset = LMDataset(params, train_file_path)
+
+                if params.lm_type == "pelectra":
+                    dataset = P2WDataset(params, train_file_path)
+                else:
+                    dataset = LMDataset(params, train_file_path)
+
                 dataloader = DataLoader(
                     dataset,
                     batch_size=params.batch_size,
@@ -227,12 +236,20 @@ def main(args):
                 )
                 train(model, optimizer, dataloader, params, device, epoch)
         else:
-            dataset = LMDataset(
-                params,
-                train_file_path,
-                addeos=params.add_sos_eos,
-                addsos=params.add_sos_eos,
-            )
+            if params.lm_type == "pelectra":
+                dataset = P2WDataset(
+                    params,
+                    train_path,
+                    addeos=params.add_sos_eos,
+                    addsos=params.add_sos_eos,
+                )
+            else:
+                dataset = LMDataset(
+                    params,
+                    train_path,
+                    addeos=params.add_sos_eos,
+                    addsos=params.add_sos_eos,
+                )
             dataloader = DataLoader(
                 dataset,
                 batch_size=params.batch_size,

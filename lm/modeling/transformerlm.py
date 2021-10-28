@@ -26,12 +26,14 @@ class TransformerLM(nn.Module):
         )
         self.transformer = BertForMaskedLM(config)
 
-    def forward(self, ys, ylens=None, labels=None):
+    def forward(self, ys, ylens=None, labels=None, ps=None, plens=None):
         if ylens is None:
             attention_mask = None
         else:
             attention_mask = make_nopad_mask(ylens).float().to(ys.device)
-            ys = ys[:, : max(ylens)]  # DataParallel
+            # DataParallel
+            ys = ys[:, : max(ylens)]
+            labels = labels[:, : max(ylens)]
 
         loss = None
         loss_dict = {}
@@ -45,10 +47,14 @@ class TransformerLM(nn.Module):
         )
         loss_dict["loss_total"] = loss
 
-        return loss, loss_dict, logits
+        return loss, loss_dict
 
     def load_state_dict(self, state_dict):
         try:
             super().load_state_dict(state_dict)
         except:
             self.transformer.load_state_dict(state_dict)
+
+
+class TransformerPLM(nn.Module):
+    pass
