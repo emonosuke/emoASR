@@ -117,7 +117,9 @@ class ASRDataset(Dataset):
         ret["texts"] = list(texts)
 
         # ys = [[y_1, ..., y_n], ...]
-        ret["ys"] = pad_sequence(ys_list, batch_first=True, padding_value=eos_id)
+        ret["ys"] = pad_sequence(
+            ys_list, batch_first=True, padding_value=eos_id
+        )  # without <eos>
 
         # add <sos> and <eos> here
         ys_eos_list = [[eos_id] + y.tolist() + [eos_id] for y in ys_list]
@@ -128,8 +130,12 @@ class ASRDataset(Dataset):
 
         ret["xs"] = pad_sequence(xs, batch_first=True)
         ret["xlens"] = torch.tensor(xlens)
-        ret["ys_in"] = pad_sequence(ys_in, batch_first=True, padding_value=eos_id)
-        ret["ys_out"] = pad_sequence(ys_out, batch_first=True, padding_value=eos_id)
+        ret["ys_in"] = pad_sequence(
+            ys_in, batch_first=True, padding_value=eos_id
+        )  # <sos> is added
+        ret["ys_out"] = pad_sequence(
+            ys_out, batch_first=True, padding_value=eos_id
+        )  # <eos> is added
 
         # NOTE: ys_in and ys_out have length ylens+1
         ret["ylens"] = torch.tensor(ylens, dtype=torch.long)

@@ -20,7 +20,7 @@ class TextAugment:
         self.max_replace_prob = params.textaug_max_replace_prob
         self.phone_vocab_size = params.src_vocab_size
         self.eos_id = params.phone_eos_id
-        self.mask_id = params.mask_id
+        self.mask_id = params.phone_mask_id
 
     def __call__(self, x):
         return self._text_replace(self._text_mask(x))
@@ -31,7 +31,7 @@ class TextAugment:
             return x_masked
 
         num_to_mask = random.randint(0, int(len(x) * self.max_mask_prob))
-        cand_indices = [j for j in range(x.size(0)) if x[j] != self.eos_id]
+        cand_indices = [j for j in range(len(x)) if x[j] != self.eos_id]
         mask_indices = random.sample(cand_indices, min(len(cand_indices), num_to_mask))
         x_masked[mask_indices] = self.mask_id
         return x_masked
@@ -42,7 +42,7 @@ class TextAugment:
             return x_replaced
 
         num_to_replace = random.randint(0, int(len(x) * self.max_replace_prob))
-        cand_indices = [j for j in range(x.size(0)) if x[j] != self.eos_id]
+        cand_indices = [j for j in range(len(x)) if x[j] != self.eos_id]
         replace_indices = random.sample(
             cand_indices, min(len(cand_indices), num_to_replace)
         )
