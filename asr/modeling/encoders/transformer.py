@@ -17,12 +17,14 @@ class TransformerEncoder(nn.Module):
         self.input_layer = params.input_layer
         self.enc_num_layers = params.enc_num_layers
 
-        input_size = params.feat_dim * params.num_framestacks
-
         if self.input_layer == "conv2d":
+            input_size = params.feat_dim * params.num_framestacks
             self.conv = Conv2dEncoder(
                 input_dim=input_size, output_dim=params.enc_hidden_size
             )
+            input_size = params.enc_hidden_size
+        elif self.input_layer == "embed":
+            self.embed = nn.Embedding(params.src_vocab_size, params.enc_hidden_size)
             input_size = params.enc_hidden_size
 
         self.pe = PositionalEncoder(input_size, dropout_rate=params.dropout_enc_rate)
@@ -45,6 +47,9 @@ class TransformerEncoder(nn.Module):
     def forward(self, xs, xlens):
         if self.input_layer == "conv2d":
             xs, elens = self.conv(xs, xlens)
+        elif self.input_layer == "embed":
+            xs = self.embed(xs)
+            elens = xlens
 
         xs = self.pe(xs)
         mask = make_src_mask(elens)

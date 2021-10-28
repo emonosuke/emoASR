@@ -19,7 +19,7 @@ from utils.converters import strip_eos
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, params):
+    def __init__(self, params, cmlm=False):
         super(TransformerDecoder, self).__init__()
 
         self.embed = nn.Embedding(params.vocab_size, params.dec_hidden_size)
@@ -42,6 +42,9 @@ class TransformerDecoder(nn.Module):
         if self.mtl_ctc_weight > 0:
             self.ctc = CTCDecoder(params)
 
+        self.mtl_ctc_phone_weight = params.mtl_ctc_phone_weight
+        self.mtl_ctc_phone_layer_id = params.mtl_ctc_phone_layer_id
+
         # normalize before
         self.norm = nn.LayerNorm(params.dec_hidden_size, eps=1e-12)
         self.output = nn.Linear(params.dec_hidden_size, params.vocab_size)
@@ -57,6 +60,7 @@ class TransformerDecoder(nn.Module):
 
         self.eos_id = params.eos_id
         self.max_decode_ylen = params.max_decode_ylen
+        self.cmlm = cmlm
 
     def forward(
         self,
@@ -74,13 +78,22 @@ class TransformerDecoder(nn.Module):
         # embedding + positional encoding
         ys_in = self.pe(self.embed(ys_in))
         emask = make_src_mask(elens)
-        ymask = make_tgt_mask(ylens + 1)
+
+        if self.cmlm:  # Conditional Masked LM
+            ymask = make_src_mask(ylens)
+        else:
+            ymask = make_tgt_mask(ylens + 1)
+
         for layer_id in range(self.dec_num_layers):
             ys_in, ymask, eouts, emask = self.transformers[layer_id](
                 ys_in, ymask, eouts, emask
             )
         ys_in = self.norm(ys_in)  # normalize before
         logits = self.output(ys_in)
+
+        if self.cmlm:
+            # NOTE: do not caluculate loss here
+            return logits
 
         loss_transformer = self.lsm_loss(logits, ys_out, ylens + 1)
         loss += loss_transformer
