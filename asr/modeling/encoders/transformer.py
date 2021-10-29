@@ -1,6 +1,8 @@
 import os
 import sys
 
+import torch
+
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../")
 sys.path.append(EMOASR_ROOT)
 
@@ -44,6 +46,11 @@ class TransformerEncoder(nn.Module):
         # normalize before
         self.norm = nn.LayerNorm(params.enc_hidden_size, eps=1e-12)
 
+        if params.mtl_inter_ctc_weight > 0 or params.mtl_phone_ctc_weight > 0:
+            self.inter_ctc_layer_id = params.inter_ctc_layer_id
+        else:
+            self.inter_ctc_layer_id = 0
+
     def forward(self, xs, xlens):
         if self.input_layer == "conv2d":
             xs, elens = self.conv(xs, xlens)
@@ -53,10 +60,17 @@ class TransformerEncoder(nn.Module):
 
         xs = self.pe(xs)
         mask = make_src_mask(elens)
+
+        eouts_inter = None
+
         for layer_id in range(self.enc_num_layers):
             xs, mask = self.transformers[layer_id](xs, mask)
+            # NOTE: intermediate branches also require normalization.
+            if (layer_id + 1) == self.inter_ctc_layer_id:
+                eouts_inter = self.norm(xs)
+
         # normalize before
         xs = self.norm(xs)
         eouts = xs
 
-        return eouts, elens
+        return eouts, elens, eouts_inter

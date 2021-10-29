@@ -1,3 +1,4 @@
+import logging
 import random
 
 import numpy as np
@@ -18,6 +19,8 @@ class SpecAugment:
         self.num_masks_time = params.num_masks_time
 
         self.replace_with_zero = params.replace_with_zero
+
+        logging.info(f"apply SpecAugment - {vars(self)}")
 
     def __call__(self, x):
         return self._time_mask(self._freq_mask(x))

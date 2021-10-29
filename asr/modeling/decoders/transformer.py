@@ -15,6 +15,7 @@ from asr.criteria import LabelSmoothingLoss
 from asr.modeling.decoders.ctc import CTCDecoder
 from asr.modeling.model_utils import make_src_mask, make_tgt_mask
 from asr.modeling.transformer import PositionalEncoder, TransformerDecoderLayer
+from lm.criteria import MaskedLMLoss
 from utils.converters import strip_eos
 
 
@@ -42,16 +43,24 @@ class TransformerDecoder(nn.Module):
         if self.mtl_ctc_weight > 0:
             self.ctc = CTCDecoder(params)
 
-        self.mtl_ctc_phone_weight = params.mtl_ctc_phone_weight
-        self.mtl_ctc_phone_layer_id = params.mtl_ctc_phone_layer_id
+        # TODO
+        # self.mtl_ctc_phone_weight = params.mtl_ctc_phone_weight
+        # self.mtl_ctc_phone_layer_id = params.mtl_ctc_phone_layer_id
 
         # normalize before
         self.norm = nn.LayerNorm(params.dec_hidden_size, eps=1e-12)
         self.output = nn.Linear(params.dec_hidden_size, params.vocab_size)
 
-        self.lsm_loss = LabelSmoothingLoss(
-            vocab_size=params.vocab_size, lsm_prob=params.lsm_prob
-        )
+        self.cmlm = cmlm
+        if self.cmlm:
+            self.loss_fn = MaskedLMLoss(vocab_size=params.vocab_size)
+        else:
+            self.loss_fn = LabelSmoothingLoss(
+                vocab_size=params.vocab_size,
+                lsm_prob=params.lsm_prob,
+                normalize_length=params.loss_normalize_length,
+                normalize_batch=params.loss_normalize_batch,
+            )
 
         self.kd_weight = params.kd_weight
         # TODO: distillation
@@ -60,17 +69,19 @@ class TransformerDecoder(nn.Module):
 
         self.eos_id = params.eos_id
         self.max_decode_ylen = params.max_decode_ylen
-        self.cmlm = cmlm
 
     def forward(
         self,
         eouts,
         elens,
+        eouts_inter=None,
         ys=None,
         ylens=None,
         ys_in=None,
-        ys_out=None,
+        ys_out=None,  # labels
         soft_labels=None,
+        ps=None,
+        plens=None,
     ):
         loss = 0
         loss_dict = {}
@@ -92,10 +103,10 @@ class TransformerDecoder(nn.Module):
         logits = self.output(ys_in)
 
         if self.cmlm:
-            # NOTE: do not caluculate loss here
-            return logits
+            loss_transformer = self.loss_fn(logits, labels=ys_out, ylens=None)
+        else:
+            loss_transformer = self.loss_fn(logits, ys_out, ylens + 1)
 
-        loss_transformer = self.lsm_loss(logits, ys_out, ylens + 1)
         loss += loss_transformer
         loss_dict["loss_transformer"] = loss_transformer
 
@@ -107,7 +118,7 @@ class TransformerDecoder(nn.Module):
 
         loss_dict["loss_total"] = loss
 
-        return loss, loss_dict
+        return loss, loss_dict, logits
 
     def forward_one_step(self, ys_in, ylens_in, eouts):
         ys_in = self.pe(self.embed(ys_in))

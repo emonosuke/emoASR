@@ -24,7 +24,7 @@ class Vocab:
     def ids2tokens(self, ids):
         return [self.id2token(i) for i in ids]
 
-    def id2words(self, ids):
+    def ids2words(self, ids):
         return self.subwords_to_words(self.ids2tokens(ids))
 
     def ids2text(self, ids):

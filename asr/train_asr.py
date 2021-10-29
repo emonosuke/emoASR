@@ -41,13 +41,17 @@ def train_step(
     ys_in = data["ys_in"].to(device)
     ys_out = data["ys_out"].to(device)
 
+    # for CTC multitask learning
+    ps = data["ps"].to(device) if "ps" in data else None
+    plens = data["plens"].to(device) if "plens" in data else None
+
     if "soft_labels" in data:
         soft_labels = data["soft_labels"].to(device)
     else:
         soft_labels = None
 
     loss, loss_dict = model(
-        xs, xlens, ys, ylens, ys_in, ys_out, soft_labels=soft_labels
+        xs, xlens, ys, ylens, ys_in, ys_out, soft_labels=soft_labels, ps=ps, plens=plens
     )
 
     # reduction for devices
@@ -128,6 +132,7 @@ def train(model, optimizer, dataloader, params, device, epoch):
             )
 
             loss_dict_sum = {}
+            # return
 
 
 def valid_step(model, data, device):
@@ -148,8 +153,10 @@ def valid_step(model, data, device):
 
 def valid(model, params, device, epoch):
     dev_size = params.dev_size if hasattr(params, "dev_size") else -1
-    vocab = Vocab(vocab_path=rel_to_abs_path(params.vocab_path), size=dev_size)
-    dataset_val = ASRDataset(params, rel_to_abs_path(params.dev_path), phase="valid")
+    vocab = Vocab(vocab_path=rel_to_abs_path(params.vocab_path))
+    dataset_val = ASRDataset(
+        params, rel_to_abs_path(params.dev_path), phase="valid", size=dev_size
+    )
     dataloader_val = DataLoader(
         dataset=dataset_val,
         batch_size=params.batch_size,

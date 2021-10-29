@@ -48,16 +48,20 @@ class ASR(nn.Module):
             f"ASR model #parameters: {num_params} ({num_params_trainable} trainable)"
         )
 
-    def forward(self, xs, xlens, ys, ylens, ys_in, ys_out, soft_labels=None):
+    def forward(
+        self, xs, xlens, ys, ylens, ys_in, ys_out, soft_labels=None, ps=None, plens=None
+    ):
         # DataParallel
         xs = xs[:, : max(xlens), :]
         ys = ys[:, : max(ylens)]
         ys_in = ys_in[:, : max(ylens) + 1]
         ys_out = ys_out[:, : max(ylens) + 1]
+        if ps is not None:
+            ps = ps[:, : max(plens)]
 
-        eouts, elens = self.encoder(xs, xlens)
+        eouts, elens, eouts_inter = self.encoder(xs, xlens)
         loss, loss_dict = self.decoder(
-            eouts, elens, ys, ylens, ys_in, ys_out, soft_labels
+            eouts, elens, eouts_inter, ys, ylens, ys_in, ys_out, soft_labels, ps, plens
         )
         return loss, loss_dict
 
@@ -65,7 +69,7 @@ class ASR(nn.Module):
         self, xs, xlens, beam_width, len_weight, decode_ctc_weight=0,
     ):
         with torch.no_grad():
-            eouts, elens = self.encoder(xs, xlens)
+            eouts, elens, _ = self.encoder(xs, xlens)
 
         # beam_width == 0 means greedy decoding
         if beam_width == 0:

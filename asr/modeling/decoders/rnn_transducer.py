@@ -81,11 +81,14 @@ class RNNTDecoder(nn.Module):
         self,
         eouts,
         elens,
+        eouts_inter=None,
         ys=None,
         ylens=None,
         ys_in=None,
         ys_out=None,
         soft_labels=None,
+        ps=None,
+        plens=None,
     ):
         loss = 0
         loss_dict = {}

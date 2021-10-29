@@ -30,7 +30,15 @@ class CTCDecoder(nn.Module):
 
         self.ctc_loss = nn.CTCLoss(blank=self.blank_id, reduction="sum")
 
+        self.mtl_phone_ctc_weight = params.mtl_phone_ctc_weight
+        self.mtl_inter_ctc_weight = params.mtl_inter_ctc_weight
         self.kd_weight = params.kd_weight
+
+        if self.mtl_phone_ctc_weight > 0:
+            self.hie_mtl_phone = params.hie_mtl_phone
+            self.phone_output = nn.Linear(
+                params.enc_hidden_size, params.phone_vocab_size
+            )
 
         if self.kd_weight > 0:
             self.ctc_kd_loss = CTCAlignDistillLoss(
@@ -45,11 +53,14 @@ class CTCDecoder(nn.Module):
         self,
         eouts,
         elens,
+        eouts_inter=None,
         ys=None,
         ylens=None,
         ys_in=None,
         ys_out=None,
         soft_labels=None,
+        ps=None,
+        plens=None,
     ):
         loss = 0
         loss_dict = {}
@@ -64,6 +75,33 @@ class CTCDecoder(nn.Module):
         )  # NOTE: nomarlize by B
         loss += loss_ctc  # main loss
         loss_dict["loss_ctc"] = loss_ctc
+
+        if self.mtl_phone_ctc_weight > 0:
+            if self.hie_mtl_phone:
+                # https://arxiv.org/abs/1807.06234
+                logits_phone = self.phone_output(eouts_inter)  # intermediate layer
+            else:
+                logits_phone = self.phone_output(eouts)  # final layer
+
+            loss_phone_ctc = self.ctc_loss(
+                logits_phone.transpose(1, 0).log_softmax(dim=2), ps, elens, plens
+            ) / logits_phone.size(0)
+
+            loss += self.mtl_phone_ctc_weight * loss_phone_ctc
+
+            if self.hie_mtl_phone:
+                loss_dict["loss_phone_ctc(inter)"] = loss_phone_ctc
+            else:
+                loss_dict["loss_phone_ctc"] = loss_phone_ctc
+
+        if self.mtl_inter_ctc_weight > 0:
+            logits_inter = self.output(eouts_inter)
+            loss_inter_ctc = self.ctc_loss(
+                logits_inter.transpose(1, 0).log_softmax(dim=2), ys, elens, ylens
+            ) / logits_inter.size(0)
+
+            loss += self.mtl_inter_ctc_weight * loss_inter_ctc
+            loss_dict[f"loss_inter_ctc"] = loss_inter_ctc
 
         if self.kd_weight > 0 and soft_labels is not None:
             log_probs = torch.log_softmax(logits, dim=-1)

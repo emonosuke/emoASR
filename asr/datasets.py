@@ -19,6 +19,7 @@ from asr.spec_augment import SpecAugment
 
 random.seed(0)
 eos_id = 2
+phone_eos_id = 2
 
 
 class ASRDataset(Dataset):
@@ -38,9 +39,28 @@ class ASRDataset(Dataset):
         else:
             self.specaug = None
 
-        self.data = pd.read_table(data_path)[
-            ["feat_path", "utt_id", "token_id", "text", "xlen", "ylen"]
-        ]
+        self.data = pd.read_table(data_path)
+
+        self.mtl_phone_ctc_weight = params.mtl_phone_ctc_weight
+
+        if self.phase == "train" and params.mtl_phone_ctc_weight > 0:
+            self.data = self.data[
+                [
+                    "feat_path",
+                    "utt_id",
+                    "token_id",
+                    "text",
+                    "xlen",
+                    "ylen",
+                    "phone_token_id",
+                ]
+            ]
+            global phone_eos_id
+            phone_eos_id = params.phone_eos_id
+        else:
+            self.data = self.data[
+                ["feat_path", "utt_id", "token_id", "text", "xlen", "ylen"]
+            ]
 
         if self.phase == "train" and params.kd_weight > 0:
             with open(params.kd_label_path, "rb") as f:
@@ -76,6 +96,13 @@ class ASRDataset(Dataset):
         y = torch.tensor(token_id, dtype=torch.long)  # int64
         ylen = y.size(0)
 
+        if "phone_token_id" in self.data:
+            phone_token_id = str2ints(self.data.loc[idx]["phone_token_id"])
+            p = torch.tensor(phone_token_id, dtype=torch.long)
+            plen = p.size(0)
+        else:
+            p, plen = None, None
+
         # for knowledge distillation
         if self.data_kd is not None:
             utt_id_nosp = get_utt_id_nosp(utt_id)
@@ -95,7 +122,7 @@ class ASRDataset(Dataset):
         else:
             soft_label = None
 
-        return utt_id, x, xlen, y, ylen, text, soft_label
+        return utt_id, x, xlen, y, ylen, text, p, plen, soft_label
 
     @staticmethod
     def _stack_frames(x, num_framestacks):
@@ -109,7 +136,7 @@ class ASRDataset(Dataset):
 
     @staticmethod
     def collate_fn(batch):
-        utt_ids, xs, xlens, ys_list, ylens, texts, soft_labels = zip(*batch)
+        utt_ids, xs, xlens, ys_list, ylens, texts, ps, plens, soft_labels = zip(*batch)
 
         ret = {}
 
@@ -139,6 +166,10 @@ class ASRDataset(Dataset):
 
         # NOTE: ys_in and ys_out have length ylens+1
         ret["ylens"] = torch.tensor(ylens, dtype=torch.long)
+
+        if ps[0] is not None:
+            ret["ps"] = pad_sequence(ps, batch_first=True, padding_value=phone_eos_id)
+            ret["plens"] = torch.tensor(plens)
 
         if soft_labels[0] is not None:
             ret["soft_labels"] = pad_sequence(soft_labels, batch_first=True)
