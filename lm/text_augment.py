@@ -1,3 +1,4 @@
+import logging
 import random
 from collections import namedtuple
 
@@ -21,6 +22,8 @@ class TextAugment:
         self.phone_vocab_size = params.src_vocab_size
         self.eos_id = params.phone_eos_id
         self.mask_id = params.phone_mask_id
+
+        logging.info(f"apply TextAugment - {vars(self)}")
 
     def __call__(self, x):
         return self._text_replace(self._text_mask(x))

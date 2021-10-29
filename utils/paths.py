@@ -13,17 +13,17 @@ def get_eval_path(ref_tag):
     # ted2
     if ref_tag == "test":  # TODO: -> ted2-test
         return os.path.join(EMOASR_ROOT, "corpora/ted2/nsp10k/data/test.tsv")
-    if ref_tag == "dev":  # TODO: -> ted2-dev
+    if ref_tag == "dev":
         return os.path.join(EMOASR_ROOT, "corpora/ted2/nsp10k/data/dev.tsv")
 
     # libri
     if ref_tag == "test-clean":  # TODO: -> libri-test-clean
         return os.path.join(EMOASR_ROOT, "corpora/libri/nsp10k/data/test_clean.tsv")
-    if ref_tag == "test-other":  # TODO: -> libri-test-other
+    if ref_tag == "test-other":
         return os.path.join(EMOASR_ROOT, "corpora/libri/nsp10k/data/test_other.tsv")
-    if ref_tag == "dev-clean":  # TODO: -> libri-dev-clean
+    if ref_tag == "dev-clean":
         return os.path.join(EMOASR_ROOT, "corpora/libri/nsp10k/data/dev_clean.tsv")
-    if ref_tag == "dev-other":  # TODO: -> libri-dev-other
+    if ref_tag == "dev-other":
         return os.path.join(EMOASR_ROOT, "corpora/libri/nsp10k/data/dev_other.tsv")
 
     # csj

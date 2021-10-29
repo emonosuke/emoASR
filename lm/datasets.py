@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
@@ -23,7 +23,13 @@ phone_eos_id = 2
 
 class LMDataset(Dataset):
     def __init__(self, params, data_path, phase="train", size=-1):
-        self.data = pd.read_table(data_path, comment="#")[["utt_id", "token_id"]]
+        self.data = pd.read_table(data_path, comment="#")
+
+        if params.bucket_shuffle:
+            self.data = self.data[["utt_id", "token_id", "ylen"]]
+        else:
+            self.data = self.data[["utt_id", "token_id"]]
+
         self.lm_type = params.lm_type
         self.add_sos_eos = params.add_sos_eos
         self.phase = phase
@@ -95,9 +101,15 @@ class LMDataset(Dataset):
 
 class P2WDataset(Dataset):
     def __init__(self, params, data_path, phase="train", size=-1):
-        self.data = pd.read_table(data_path, comment="#")[
-            ["utt_id", "token_id", "phone_token_id"]
-        ]
+        self.data = pd.read_table(data_path, comment="#")
+
+        if params.bucket_shuffle:
+            self.data = self.data[
+                ["utt_id", "token_id", "phone_token_id", "ylen", "plen"]
+            ]
+        else:
+            self.data = self.data[["utt_id", "token_id", "phone_token_id"]]
+
         self.lm_type = params.lm_type
         self.add_sos_eos = params.add_sos_eos
         self.phase = phase
@@ -116,7 +128,7 @@ class P2WDataset(Dataset):
             self.textaug = None
 
         # mask y for MLM
-        if self.lm_type in ["pelectra"]:
+        if self.lm_type in ["pelectra", "pbert"]:
             self.mask_id = params.mask_id
             # either `num_to_mask` or `mask_proportion` must be specified
             assert hasattr(params, "num_to_mask") ^ hasattr(params, "mask_proportion")
@@ -146,7 +158,7 @@ class P2WDataset(Dataset):
             p = self.textaug(p)
 
         if self.phase == "train":
-            if self.lm_type in ["pelectra"]:
+            if self.lm_type in ["pelectra", "pbert"]:
                 y_in, label = create_masked_lm_label(
                     y,
                     mask_id=self.mask_id,
@@ -154,12 +166,15 @@ class P2WDataset(Dataset):
                     mask_proportion=self.mask_proportion,
                     random_num_to_mask=self.random_num_to_mask,
                 )
+            elif self.lm_type == "ptransformer":
+                y_in = y[:-1]
+                label = y[1:]
         else:
             y_in = y
             label = None
 
-        ylen = y_in.size(0)
         plen = p.size(0)
+        ylen = y_in.size(0)
 
         return utt_id, p, plen, y_in, ylen, label
 
@@ -180,6 +195,78 @@ class P2WDataset(Dataset):
         return ret
 
 
+# TODO common use for LM and P2W (and ASR)
+class LMBatchSampler(Sampler):
+    def __init__(self, dataset, params, min_batch_size=1):
+        if "plen" in dataset.data:
+            self.plens = dataset.data["plen"].values
+        else:
+            self.plens = None
+        if "ylen" in dataset.data:
+            self.ylens = dataset.data["ylen"].values
+        else:
+            self.ylens = None
+
+        self.dataset_size = len(self.ylens)
+
+        if hasattr(params, "max_plens_batch"):
+            self.max_plens_batch = params.max_plens_batch
+        else:
+            self.max_plens_batch = 1  # `plens_sum` is always 0
+
+        self.max_ylens_batch = params.max_ylens_batch
+        self.batch_size = params.batch_size
+        self.min_batch_size = min_batch_size
+        self.indices_batches = self._make_batches()
+
+    def _make_batches(self):
+        self.index = 0
+        indices_batches = []
+
+        while self.index < self.dataset_size:
+            indices = []
+            plens_sum = 0
+            ylens_sum = 0
+
+            while self.index < self.dataset_size:
+                plen = self.plens[self.index] if self.plens is not None else 0
+                ylen = self.ylens[self.index]
+
+                assert plen <= self.max_plens_batch
+                assert ylen <= self.max_ylens_batch
+                if (
+                    plens_sum + plen > self.max_plens_batch
+                    or ylens_sum + ylen > self.max_ylens_batch
+                    or len(indices) + 1 > self.batch_size
+                ):
+                    break
+
+                indices.append(self.index)
+                plens_sum += plen
+                ylens_sum += ylen
+                self.index += 1
+
+            if len(indices) < self.min_batch_size:
+                logging.warning(
+                    f"{len(indices)} utterances are skipped because of they are smaller than min_batch_size"
+                )
+            else:
+                indices_batches.append(indices)
+
+        return indices_batches
+
+    def __iter__(self):
+        # NOTE: shuffled for each epoch
+        random.shuffle(self.indices_batches)
+        logging.debug("batches are shuffled in Sampler")
+
+        for indices in self.indices_batches:
+            yield indices
+
+    def __len__(self):
+        return len(self.indices_batches)
+
+
 def create_masked_lm_label(
     y, mask_id, num_to_mask=-1, mask_proportion=-1, random_num_to_mask=False
 ):
@@ -190,7 +277,7 @@ def create_masked_lm_label(
     random.shuffle(cand_indices)
 
     if mask_proportion > 0:
-        num_to_mask = int(len(cand_indices) * mask_proportion)
+        num_to_mask = max(int(len(cand_indices) * mask_proportion), 1)
 
     if random_num_to_mask:
         num_to_mask = random.randint(1, num_to_mask)

@@ -26,8 +26,9 @@ from asr.optimizers import (
 from utils.configure import load_config
 from utils.paths import get_log_save_paths, get_model_optim_paths, rel_to_abs_path
 
-from lm.datasets import LMDataset, P2WDataset
+from lm.datasets import LMBatchSampler, LMDataset, P2WDataset
 from lm.modeling.lm import LM
+from lm.modeling.p2w import P2W
 
 # Reproducibility
 torch.manual_seed(0)
@@ -45,7 +46,7 @@ def train_step(
     ylens = data["ylens"].to(device)
     labels = data["labels"].to(device)
 
-    # for `pelectra`
+    # for P2WDataset
     ps = data["ps"].to(device) if "ps" in data else None
     plens = data["plens"].to(device) if "plens" in data else None
 
@@ -163,7 +164,11 @@ def main(args):
     logging.info(f"conda env: {os.environ['CONDA_DEFAULT_ENV']}")
     logging.info(f"torch version: {torch.__version__}")
 
-    model = LM(params)
+    if params.lm_type in ["ptransformer", "pbert"]:
+        model = P2W(params)
+    else:
+        model = LM(params)
+
     model_path, optim_path, startep = get_model_optim_paths(
         args.conf,
         resume=args.resume,
@@ -218,47 +223,64 @@ def main(args):
             for step_ds, train_file in enumerate(train_files):
                 train_file_path = os.path.join(train_path, train_file)
 
-                if params.lm_type == "pelectra":
+                if params.lm_type in ["pelectra", "ptransformer", "pbert"]:
                     dataset = P2WDataset(params, train_file_path)
                 else:
                     dataset = LMDataset(params, train_file_path)
 
-                dataloader = DataLoader(
-                    dataset,
-                    batch_size=params.batch_size,
-                    shuffle=True,
-                    num_workers=2,
-                    pin_memory=True,
-                    collate_fn=dataset.collate_fn,
-                )
+                if params.bucket_shuffle:
+                    dataloader = DataLoader(
+                        dataset=dataset,
+                        batch_sampler=LMBatchSampler(
+                            dataset, params, min_batch_size=num_gpus
+                        ),
+                        collate_fn=dataset.collate_fn,
+                        num_workers=1,
+                    )
+                    logging.info(
+                        f"{len(dataset):d} samples -> {len(dataloader):d} batches (batch size average: {(len(dataset)/len(dataloader)):.2f})"
+                    )
+                else:
+                    dataloader = DataLoader(
+                        dataset=dataset,
+                        batch_size=params.batch_size,
+                        shuffle=True,
+                        num_workers=1,
+                        pin_memory=True,
+                        collate_fn=dataset.collate_fn,
+                    )
                 logging.info(
                     f"Dataset ({(step_ds+1):d}/{len(train_files):d}): {train_file_path}"
                 )
                 train(model, optimizer, dataloader, params, device, epoch)
         else:
-            if params.lm_type == "pelectra":
-                dataset = P2WDataset(
-                    params,
-                    train_path,
-                    addeos=params.add_sos_eos,
-                    addsos=params.add_sos_eos,
+            if params.lm_type in ["pelectra", "ptransformer", "pbert"]:
+                dataset = P2WDataset(params, train_path)
+            else:
+                dataset = LMDataset(params, train_path)
+
+            if params.bucket_shuffle:
+                dataloader = DataLoader(
+                    dataset=dataset,
+                    batch_sampler=LMBatchSampler(
+                        dataset, params, min_batch_size=num_gpus
+                    ),
+                    collate_fn=dataset.collate_fn,
+                    num_workers=1,
+                )
+                logging.info(
+                    f"{len(dataset):d} samples -> {len(dataloader):d} batches (batch size average: {(len(dataset)/len(dataloader)):.2f})"
                 )
             else:
-                dataset = LMDataset(
-                    params,
-                    train_path,
-                    addeos=params.add_sos_eos,
-                    addsos=params.add_sos_eos,
+                dataloader = DataLoader(
+                    dataset,
+                    batch_size=params.batch_size,
+                    shuffle=True,
+                    num_workers=1,
+                    pin_memory=True,
+                    collate_fn=dataset.collate_fn,
                 )
-            dataloader = DataLoader(
-                dataset,
-                batch_size=params.batch_size,
-                shuffle=True,
-                num_workers=2,
-                pin_memory=True,
-                collate_fn=dataset.collate_fn,
-            )
-            logging.info(f"Dataset: {train_file_path}")
+            logging.info(f"Dataset: {train_path}")
             train(model, optimizer, dataloader, params, device, epoch)
         elapsed_time = datetime.timedelta(seconds=(time.time() - _time))
         end_time = datetime.datetime.now() + elapsed_time * (

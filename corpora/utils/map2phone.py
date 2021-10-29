@@ -19,7 +19,7 @@ from utils.vocab import Vocab
 
 def main(args):
     df = pd.read_table(args.tsv_path)
-    df = df.dropna()
+    df = df.dropna(subset=["utt_id", "token_id", "text"])
     vocab = Vocab(args.vocab)
 
     phone_texts = []

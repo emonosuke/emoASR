@@ -111,7 +111,13 @@ class PELECTRAModel(nn.Module):
         super(PELECTRAModel, self).__init__()
 
         # Generator: condictional MLM
-        self.gmodel = P2W(params, cmlm=True)
+        self.gmodel = P2W(
+            params,
+            cmlm=True,
+            encoder_type="transformer",
+            decoder_type="bert",
+            return_logits=True,
+        )
         num_params, num_params_trainable = get_num_parameters(self.gmodel)
         logging.info(
             f"PELECTRA: Generator #parameters: {num_params} ({num_params_trainable} trainable)"
@@ -145,7 +151,7 @@ class PELECTRAModel(nn.Module):
             ps = ps[:, : max(plens)]
             labels = labels[:, : max(ylens)]
 
-        gloss, _, glogits = self.gmodel(ps, plens, ys, ylens, labels=labels)
+        gloss, _, glogits = self.gmodel(ys, ylens, labels=labels, ps=ps, plens=plens)
 
         generated_ids = ys.clone()
         masked_indices = labels.long() != -100
