@@ -34,7 +34,6 @@ class BERTMaskedLM(nn.Module):
             attention_mask = make_nopad_mask(ylens).float().to(ys.device)
             # DataParallel
             ys = ys[:, : max(ylens)]
-            labels = labels[:, : max(ylens)]
 
         loss = None
         loss_dict = {}
@@ -42,6 +41,7 @@ class BERTMaskedLM(nn.Module):
             (logits,) = self.bert(ys, attention_mask=attention_mask)
             return logits
 
+        labels = labels[:, : max(ylens)]
         loss, logits = self.bert(ys, attention_mask=attention_mask, labels=labels)
         loss_dict["loss_total"] = loss
 

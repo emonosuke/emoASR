@@ -13,6 +13,7 @@ EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
 from utils.io_utils import load_config
+from utils.log import insert_comment
 from utils.paths import get_eval_path, get_model_path, rel_to_abs_path
 
 from lm.datasets import LMDataset
@@ -67,7 +68,7 @@ def ppl_masked_lm(dataloader, model, device, mask_id):
             logging.info(
                 f"{(i+1):>4} / {len(dataloader):>4} PPL: {math.exp(sum_logprob/cnt):.3f}"
             )
-        ys_in = data["ys_in"]
+        ys = data["ys_in"]  # not masked
         ylens = data["ylens"]
         assert ys.size(0) == 1
 
@@ -96,7 +97,7 @@ def test(model, dataloader, params, device):
         cnt, ppl = ppl_lm(dataloader, model, device)
 
     logging.info(f"{cnt} tokens")
-    logging.info(f"PPL: {ppl:.3f}")
+    return ppl
 
 
 def main(args):
@@ -120,6 +121,10 @@ def main(args):
         data_path = params.test_path
     logging.info(f"test data: {data_path}")
 
+    with open(rel_to_abs_path(data_path)) as f:
+        lines = f.readlines()
+        logging.info(lines[0])
+
     dataset = LMDataset(params, rel_to_abs_path(data_path), phase="test")
     dataloader = DataLoader(
         dataset=dataset,
@@ -136,7 +141,11 @@ def main(args):
     model.to(device)
     model.eval()
 
-    test(model, dataloader, params, device)
+    ppl = test(model, dataloader, params, device)
+
+    ppl_info = f"PPL: {ppl:.2f} (conf: {args.conf})"
+    logging.info(ppl_info)
+    insert_comment(args.data, ppl_info)
 
 
 if __name__ == "__main__":

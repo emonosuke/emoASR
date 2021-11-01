@@ -90,4 +90,6 @@ class RNNEncoder(nn.Module):
             eouts_pack, _ = self.rnns(xs_pack)
             eouts, _ = pad_packed_sequence(eouts_pack, batch_first=True)
 
-        return eouts, elens
+        eouts_inter = None
+
+        return eouts, elens, eouts_inter

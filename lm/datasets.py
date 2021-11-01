@@ -30,6 +30,13 @@ class LMDataset(Dataset):
         else:
             self.data = self.data[["utt_id", "token_id"]]
 
+        len_data = len(self.data)
+        self.data = self.data.dropna().reset_index(drop=True)
+        if len(self.data) != len_data:
+            logging.warning(
+                f"nan value in dataset is removed: {len_data:d} -> {len(self.data):d}"
+            )
+
         self.lm_type = params.lm_type
         self.add_sos_eos = params.add_sos_eos
         self.phase = phase
