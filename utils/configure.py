@@ -5,6 +5,7 @@ import yaml
 
 
 def load_config(config_path: str) -> dict:
+    # TODO: detect duplicate keys
     with codecs.open(config_path, "r", encoding="utf-8") as f:
         params = yaml.load(f, Loader=yaml.FullLoader)
 

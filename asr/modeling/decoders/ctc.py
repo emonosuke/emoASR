@@ -140,4 +140,4 @@ class CTCDecoder(nn.Module):
             scores.append(None)
             aligns.append(indices)
 
-        return hyps, scores, aligns
+        return hyps, scores, logits, aligns

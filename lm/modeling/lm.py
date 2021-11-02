@@ -39,7 +39,7 @@ class LM(nn.Module):
             f"LM model #parameters: {num_params} ({num_params_trainable} trainable)"
         )
 
-    def forward(self, ys, ylens, labels=None, ps=None, plens=None):
+    def forward(self, ys, ylens=None, labels=None, ps=None, plens=None):
         return self.lm(ys, ylens, labels, ps, plens)
 
     def load_state_dict(self, state_dict):

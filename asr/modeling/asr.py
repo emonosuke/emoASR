@@ -65,17 +65,19 @@ class ASR(nn.Module):
         )
         return loss, loss_dict
 
-    def decode(
-        self, xs, xlens, beam_width, len_weight, decode_ctc_weight=0,
-    ):
+    def decode(self, xs, xlens, beam_width, len_weight, decode_ctc_weight=0):
         with torch.no_grad():
             eouts, elens, _ = self.encoder(xs, xlens)
+
+        logits, aligns = None, None
 
         # beam_width == 0 means greedy decoding
         if beam_width == 0:
             assert self.decoder_type in ["ctc", "rnn_transducer"]
             with torch.no_grad():
-                hyps, scores, _ = self.decoder.greedy(eouts, elens, decode_ctc_weight)
+                hyps, scores, logits, aligns = self.decoder.greedy(
+                    eouts, elens, decode_ctc_weight
+                )
         else:
             # TODO: support `ctc` and `rnn_transducer`
             assert self.decoder_type in ["transformer"]
@@ -83,7 +85,7 @@ class ASR(nn.Module):
                 hyps, scores = self.decoder.beam_search(
                     eouts, elens, beam_width, len_weight
                 )
-        return hyps, scores
+        return hyps, scores, logits, aligns
 
     def forced_align(self, xs, xlens, decode_ctc_weight=0):
         with torch.no_grad():

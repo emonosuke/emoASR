@@ -199,6 +199,7 @@ class RNNTDecoder(nn.Module):
 
         hyps = []
         scores = []
+        logits = None  # TODO
         aligns = []
 
         for b in range(bs):
@@ -233,4 +234,4 @@ class RNNTDecoder(nn.Module):
             scores.append(None)
             aligns.append(align)
 
-        return hyps, scores, aligns
+        return hyps, scores, logits, aligns

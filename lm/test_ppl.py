@@ -47,6 +47,7 @@ def ppl_lm(dataloader, model, device):
             continue
 
         with torch.no_grad():
+            print(f"ys_in: {ys_in}")
             logits = model(ys_in, ylens, labels=None)
         logprobs = torch.log_softmax(logits, dim=-1)
 
@@ -59,7 +60,7 @@ def ppl_lm(dataloader, model, device):
     return cnt, ppl
 
 
-def ppl_masked_lm(dataloader, model, device, mask_id):
+def ppl_masked_lm(dataloader, model, device, mask_id, max_seq_len):
     cnt = 0
     sum_logprob = 0
 
@@ -71,6 +72,10 @@ def ppl_masked_lm(dataloader, model, device, mask_id):
         ys = data["ys_in"]  # not masked
         ylens = data["ylens"]
         assert ys.size(0) == 1
+
+        if ys.size(1) > max_seq_len:
+            logging.warning(f"input length longer than {max_seq_len:d} skip")
+            continue
 
         for mask_pos in range(ys.size(1)):
             ys_masked = ys.clone()
@@ -92,7 +97,13 @@ def ppl_masked_lm(dataloader, model, device, mask_id):
 
 def test(model, dataloader, params, device):
     if params.lm_type == "bert":
-        cnt, ppl = ppl_masked_lm(dataloader, model, device, mask_id=params.mask_id)
+        cnt, ppl = ppl_masked_lm(
+            dataloader,
+            model,
+            device,
+            mask_id=params.mask_id,
+            max_seq_len=params.max_seq_len,
+        )
     elif params.lm_type == "transformer":
         cnt, ppl = ppl_lm(dataloader, model, device)
 
@@ -152,7 +163,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-conf", type=str, required=True)
     parser.add_argument("-ep", type=int, default=0)
-    parser.add_argument("-model", type=str, default=None)
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--data", type=str, default=None)
     args = parser.parse_args()
