@@ -5,7 +5,6 @@ import logging
 import os
 import socket
 import sys
-import time
 
 import git
 import numpy as np
@@ -19,7 +18,7 @@ sys.path.append(EMOASR_ROOT)
 from lm.modeling.lm import LM
 from utils.average_checkpoints import model_average
 from utils.configure import load_config
-from utils.converters import ints2str, np2tensor, strip_eos, tensor2np
+from utils.converters import ints2str, np2tensor, tensor2np
 from utils.log import insert_comment
 from utils.paths import get_eval_path, get_model_path, get_results_dir, rel_to_abs_path
 from utils.vocab import Vocab

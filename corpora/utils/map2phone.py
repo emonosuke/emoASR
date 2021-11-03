@@ -1,5 +1,5 @@
 """
-Add phone mapping to tsv (as `phone_token_id`, `phone_text`)
+Add phone mapping to tsv (as `phone_token_id`, `phone_text`) with lexicon
 """
 
 import argparse

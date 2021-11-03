@@ -132,7 +132,6 @@ def train(model, optimizer, dataloader, params, device, epoch):
             )
 
             loss_dict_sum = {}
-            # return
 
 
 def valid_step(model, data, device):
@@ -142,9 +141,9 @@ def valid_step(model, data, device):
     ylens = data["ylens"]
 
     if torch.cuda.device_count() > 1:
-        hyps, _ = model.module.decode(xs, xlens, beam_width=0, len_weight=0)
+        hyps, *_ = model.module.decode(xs, xlens, beam_width=0, len_weight=0)
     else:
-        hyps, _ = model.decode(xs, xlens, beam_width=0, len_weight=0)
+        hyps, *_ = model.decode(xs, xlens, beam_width=0, len_weight=0)
 
     refs = [y[:ylen].tolist() for y, ylen in zip(ys, ylens)]
 
