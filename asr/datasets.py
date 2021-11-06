@@ -41,9 +41,13 @@ class ASRDataset(Dataset):
 
         self.data = pd.read_table(data_path)
 
-        self.mtl_phone_ctc_weight = params.mtl_phone_ctc_weight
+        self.mtl_phone_ctc_weight = (
+            params.mtl_phone_ctc_weight
+            if hasattr(params, "mtl_phone_ctc_weight")
+            else 0
+        )
 
-        if self.phase == "train" and params.mtl_phone_ctc_weight > 0:
+        if self.phase == "train" and self.mtl_phone_ctc_weight > 0:
             self.data = self.data[
                 [
                     "feat_path",

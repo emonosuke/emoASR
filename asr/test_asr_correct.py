@@ -56,8 +56,7 @@ def aggregate_logits(logits, aligns, blank_id, mask_id, reduction="max"):
                 token_probs_v.append(token_probs_allv_tmp[index, token_id_prev])
             token_probs_allv_tmp = []
 
-        probs = torch.softmax(logits[t], dim=-1)
-        token_probs_allv_tmp.append(tensor2np(probs))
+        token_probs_allv_tmp.append(tensor2np(torch.softmax(logits[t], dim=-1)))
         token_id_prev = token_id
 
     token_probs_allv_tmp = np.array(token_probs_allv_tmp)
@@ -69,7 +68,7 @@ def aggregate_logits(logits, aligns, blank_id, mask_id, reduction="max"):
     return np.array(token_probs_allv), np.array(token_probs_v)
 
 
-def test_step(model, lm, data, blank_id, mask_id, mask_th, device, vocab):
+def test_step(model, lm, data, blank_id, mask_id, mask_th, device, vocab, vocab_size):
     utt_id = data["utt_ids"][0]
     xs = data["xs"].to(device)
     xlens = data["xlens"].to(device)
@@ -83,37 +82,45 @@ def test_step(model, lm, data, blank_id, mask_id, mask_th, device, vocab):
 
     hyp = np.array(hyps[0])
     hyp_masked = hyp.copy()
-    token_probs_allv, token_probs_v = aggregate_logits(
+    token_probs, token_probs_v = aggregate_logits(
         logits[0], aligns[0], blank_id, mask_id
     )
-    assert len(hyp) == len(token_probs_allv)
+    assert len(hyp) == len(token_probs)
     assert len(hyp) == len(token_probs_v)
 
     # mask less confident tokens
     mask_indices = token_probs_v < mask_th
     hyp_masked[mask_indices] = mask_id
-    # logging.debug(f"{' '.join(vocab.ids2tokens(hyp))}")
-    # logging.debug(
-    #     f"{' '.join(vocab.ids2tokens(hyp_masked))} ({sum(mask_indices):d}/{len(mask_indices):d} masked)"
-    # )
+    logging.debug(f"{' '.join(vocab.ids2tokens(hyp))}")
+    logging.debug(
+        f"{' '.join(vocab.ids2tokens(hyp_masked))} ({sum(mask_indices):d}/{len(mask_indices):d} masked)"
+    )
 
-    ys = np2tensor(hyp_masked).unsqueeze(0).to(device)
-    logits = lm(ys)
-    ys_gen = torch.argmax(logits, dim=-1)
+    y = np2tensor(hyp_masked)
+    logits = lm(y.unsqueeze(0).to(device))
+    lm_token_probs = tensor2np(torch.softmax(logits[0], dim=-1))
 
-    ys[0, mask_indices] = ys_gen[0, mask_indices]
-    hyp_cor = tensor2np(ys[0])
-    # logging.debug(f"{' '.join(vocab.ids2tokens(hyp_cor))}")
+    # fusion
+    # TODO: smooth CTC probs
+    token_probs_mix = (1 - args.lm_weight) * token_probs[
+        :, :vocab_size
+    ] + args.lm_weight * lm_token_probs[:, :vocab_size]
+
+    y_gen = np.argmax(token_probs_mix, axis=-1)
+
+    hyp_cor = hyp.copy()
+    hyp_cor[mask_indices] = y_gen[mask_indices]
+    logging.debug(f"{' '.join(vocab.ids2tokens(hyp_cor))}")
 
     return utt_id, hyp, hyp_cor, reftext
 
 
-def test(model, lm, dataloader, vocab, device, blank_id, mask_id, mask_th):
+def test(model, lm, dataloader, vocab, vocab_size, device, blank_id, mask_id, mask_th):
     rows = []  # utt_id, token_id, text, reftext
 
     for i, data in enumerate(dataloader):
         utt_id, hyp, hyp_cor, reftext = test_step(
-            model, lm, data, blank_id, mask_id, mask_th, device, vocab
+            model, lm, data, blank_id, mask_id, mask_th, device, vocab, vocab_size
         )
         text = ""
 
@@ -122,14 +129,12 @@ def test(model, lm, dataloader, vocab, device, blank_id, mask_id, mask_th):
             text = ""
             logging.warning(f"cannot decode {utt_id}")
         else:
-            # token_id = ints2str(hyp)
-            # text = vocab.ids2text(hyp)
             token_id = ints2str(hyp_cor)
             text = vocab.ids2text(hyp_cor)
 
         rows.append([utt_id, token_id, text, reftext])
 
-        logging.debug(f"{utt_id}({(i+1):d}/{len(dataloader):d}): {text}")
+        logging.debug(f"*** {utt_id}({(i+1):d}/{len(dataloader):d}): {text}")
 
     return rows
 
@@ -217,9 +222,10 @@ def main(args):
         lm,
         dataloader,
         vocab,
+        params.vocab_size,
         device,
-        blank_id=params.blank_id,
-        mask_id=lm_params.mask_id,
+        params.blank_id,
+        lm_params.mask_id,
         mask_th=args.mask_th,
     )
 
@@ -240,7 +246,7 @@ if __name__ == "__main__":
     parser.add_argument("-ep", type=str, required=True)
     parser.add_argument("-lm_conf", type=str, required=True)
     parser.add_argument("-lm_ep", type=str, required=True)
-    parser.add_argument("--lm_weight", type=int, default=1)
+    parser.add_argument("--lm_weight", type=float, default=1)
     parser.add_argument("--mask_th", type=float, default=0.9)
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--data", type=str, default=None)

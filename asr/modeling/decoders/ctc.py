@@ -29,9 +29,20 @@ class CTCDecoder(nn.Module):
         self.output = nn.Linear(params.enc_hidden_size, params.vocab_size)
 
         self.ctc_loss = nn.CTCLoss(blank=self.blank_id, reduction="sum")
+        # self.ctc_loss = nn.CTCLoss(
+        #     blank=self.blank_id, reduction="sum", zero_infinity=True
+        # )
 
-        self.mtl_phone_ctc_weight = params.mtl_phone_ctc_weight
-        self.mtl_inter_ctc_weight = params.mtl_inter_ctc_weight
+        self.mtl_phone_ctc_weight = (
+            params.mtl_phone_ctc_weight
+            if hasattr(params, "mtl_phone_ctc_weight")
+            else 0
+        )
+        self.mtl_inter_ctc_weight = (
+            params.mtl_inter_ctc_weight
+            if hasattr(params, "mtl_inter_ctc_weight")
+            else 0
+        )
         self.kd_weight = params.kd_weight
 
         if self.mtl_phone_ctc_weight > 0:
@@ -77,6 +88,9 @@ class CTCDecoder(nn.Module):
         loss_dict["loss_ctc"] = loss_ctc
 
         if self.mtl_phone_ctc_weight > 0:
+            # for elen, plen in zip(elens, plens):
+            #     assert elen >= plen
+
             if self.hie_mtl_phone:
                 # https://arxiv.org/abs/1807.06234
                 logits_phone = self.phone_output(eouts_inter)  # intermediate layer

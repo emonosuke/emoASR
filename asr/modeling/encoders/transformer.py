@@ -28,6 +28,10 @@ class TransformerEncoder(nn.Module):
         elif self.input_layer == "embed":
             self.embed = nn.Embedding(params.src_vocab_size, params.enc_hidden_size)
             input_size = params.enc_hidden_size
+        elif self.input_layer == "linear":
+            input_size = params.feat_dim * params.num_framestacks
+            self.linear = nn.Linear(input_size, params.enc_hidden_size)
+            input_size = params.enc_hidden_size
 
         self.pe = PositionalEncoder(input_size, dropout_rate=params.dropout_enc_rate)
 
@@ -46,7 +50,11 @@ class TransformerEncoder(nn.Module):
         # normalize before
         self.norm = nn.LayerNorm(params.enc_hidden_size, eps=1e-12)
 
-        if params.mtl_inter_ctc_weight > 0 or params.mtl_phone_ctc_weight > 0:
+        if (
+            hasattr(params, "mtl_inter_ctc_weight") and params.mtl_inter_ctc_weight > 0
+        ) or (
+            hasattr(params, "mtl_phone_ctc_weight") and params.mtl_phone_ctc_weight > 0
+        ):
             self.inter_ctc_layer_id = params.inter_ctc_layer_id
         else:
             self.inter_ctc_layer_id = 0
@@ -56,6 +64,9 @@ class TransformerEncoder(nn.Module):
             xs, elens = self.conv(xs, xlens)
         elif self.input_layer == "embed":
             xs = self.embed(xs)
+            elens = xlens
+        elif self.input_layer == "linear":
+            xs = self.linear(xs)
             elens = xlens
 
         xs = self.pe(xs)

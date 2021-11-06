@@ -43,10 +43,6 @@ class TransformerDecoder(nn.Module):
         if self.mtl_ctc_weight > 0:
             self.ctc = CTCDecoder(params)
 
-        # TODO
-        # self.mtl_ctc_phone_weight = params.mtl_ctc_phone_weight
-        # self.mtl_ctc_phone_layer_id = params.mtl_ctc_phone_layer_id
-
         # normalize before
         self.norm = nn.LayerNorm(params.dec_hidden_size, eps=1e-12)
         self.output = nn.Linear(params.dec_hidden_size, params.vocab_size)
