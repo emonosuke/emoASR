@@ -65,6 +65,7 @@ def main(args):
 
     phone_texts = []
     phone_token_ids = []
+    phone_lens = []
 
     for row in tqdm(df.itertuples()):
         text = row.text.replace(" ", "")  # remove spaces
@@ -74,9 +75,11 @@ def main(args):
 
         phone_texts.append(phone_text)
         phone_token_ids.append(phone_token_id)
+        phone_lens.append(len(phones))
 
     df["phone_text"] = phone_texts
     df["phone_token_id"] = phone_token_ids
+    df["plen"] = phone_lens
 
     if args.cols is not None:
         columns = [column for column in args.cols.split(",")]

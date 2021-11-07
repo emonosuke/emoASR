@@ -98,6 +98,9 @@ class TransformerDecoder(nn.Module):
         ys_in = self.norm(ys_in)  # normalize before
         logits = self.output(ys_in)
 
+        if ys_out is None:
+            return logits
+
         if self.cmlm:
             loss_transformer = self.loss_fn(logits, labels=ys_out, ylens=None)
         else:
@@ -108,7 +111,9 @@ class TransformerDecoder(nn.Module):
 
         if self.mtl_ctc_weight > 0:
             # NOTE: KD is not applied to auxiliary CTC
-            loss_ctc, _ = self.ctc(eouts, elens, ys, ylens, soft_labels=None)
+            loss_ctc, _ = self.ctc(
+                eouts=eouts, elens=elens, ys=ys, ylens=ylens, soft_labels=None
+            )
             loss += self.mtl_ctc_weight * loss_ctc  # auxiliary loss
             loss_dict["loss_ctc"] = loss_ctc
 
