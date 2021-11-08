@@ -1,5 +1,5 @@
 """
-Add phone mapping to tsv (as `phone_token_id`, `phone_text`) with g2p (openjtalk)
+Add phone mapping to tsv (as `phone_token_id`, `phone_text`) with g2p tool (openjtalk)
 """
 
 import argparse

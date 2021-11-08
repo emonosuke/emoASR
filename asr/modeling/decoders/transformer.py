@@ -111,7 +111,7 @@ class TransformerDecoder(nn.Module):
 
         if self.mtl_ctc_weight > 0:
             # NOTE: KD is not applied to auxiliary CTC
-            loss_ctc, _ = self.ctc(
+            loss_ctc, _, _ = self.ctc(
                 eouts=eouts, elens=elens, ys=ys, ylens=ylens, soft_labels=None
             )
             loss += self.mtl_ctc_weight * loss_ctc  # auxiliary loss

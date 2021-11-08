@@ -1,7 +1,7 @@
 """ WER computation
 
 Reference
-    - https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/evaluators/edit_distance.py
+    https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/evaluators/edit_distance.py
 """
 
 import argparse

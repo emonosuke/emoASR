@@ -1,7 +1,7 @@
 """ RNN Transducer
 
 Reference:
-    - https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/rnn_transducer.py
+    https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/rnn_transducer.py
 """
 
 # TODO: beam search
@@ -117,7 +117,9 @@ class RNNTDecoder(nn.Module):
 
         if self.mtl_ctc_weight > 0:
             # NOTE: KD is not applied to auxiliary CTC
-            loss_ctc, _ = self.ctc(eouts, elens, ys, ylens, soft_labels=None)
+            loss_ctc, _, _ = self.ctc(
+                eouts=eouts, elens=elens, ys=ys, ylens=ylens, soft_labels=None
+            )
             loss += self.mtl_ctc_weight * loss_ctc  # auxiliary loss
             loss_dict["loss_ctc"] = loss_ctc
 
@@ -139,7 +141,7 @@ class RNNTDecoder(nn.Module):
 
         loss_dict["loss_total"] = loss
 
-        return loss, loss_dict
+        return loss, loss_dict, logits
 
     def joint(self, eouts, douts):
         """ Joint network

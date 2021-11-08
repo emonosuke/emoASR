@@ -1,7 +1,7 @@
 """ CTC
 
 Reference:
-    - https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/ctc.py
+    https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/ctc.py
 """
 
 # TODO: beam search
@@ -28,10 +28,10 @@ class CTCDecoder(nn.Module):
 
         self.output = nn.Linear(params.enc_hidden_size, params.vocab_size)
 
-        self.ctc_loss = nn.CTCLoss(blank=self.blank_id, reduction="sum")
-        # self.ctc_loss = nn.CTCLoss(
-        #     blank=self.blank_id, reduction="sum", zero_infinity=True
-        # )
+        # self.ctc_loss = nn.CTCLoss(blank=self.blank_id, reduction="sum")
+        self.ctc_loss = nn.CTCLoss(
+            blank=self.blank_id, reduction="sum", zero_infinity=True
+        )
 
         self.mtl_phone_ctc_weight = (
             params.mtl_phone_ctc_weight
@@ -131,7 +131,7 @@ class CTCDecoder(nn.Module):
 
         loss_dict["loss_total"] = loss
 
-        return loss, loss_dict
+        return loss, loss_dict, logits
 
     def greedy(self, eouts, elens, decode_ctc_weight=0):
         # NOTE: `decode_ctc_weight` is not used

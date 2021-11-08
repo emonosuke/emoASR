@@ -1,7 +1,7 @@
 """ Forced alignment with CTC Forward-Backward algorithm
 
 Reference
-    - https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/ctc.py
+    https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/ctc.py
 """
 
 import os
@@ -97,7 +97,7 @@ class CTCForcedAligner(object):
     """
     
     Reference:
-    - https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/ctc.py
+        https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/ctc.py
     """
 
     def __init__(self, blank_id=0):

@@ -60,7 +60,7 @@ class ASR(nn.Module):
             ps = ps[:, : max(plens)]
 
         eouts, elens, eouts_inter = self.encoder(xs, xlens)
-        loss, loss_dict = self.decoder(
+        loss, loss_dict, _ = self.decoder(
             eouts, elens, eouts_inter, ys, ylens, ys_in, ys_out, soft_labels, ps, plens
         )
         return loss, loss_dict

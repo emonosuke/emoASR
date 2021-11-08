@@ -1,7 +1,7 @@
 """ Forced alignment with RNN-T Forward-Backward algorithm
 
 Reference
-    - https://github.com/speechbrain/speechbrain/blob/develop/speechbrain/nnet/loss/transducer_loss.py
+    https://github.com/speechbrain/speechbrain/blob/develop/speechbrain/nnet/loss/transducer_loss.py
 """
 
 import math
