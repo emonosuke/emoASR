@@ -190,7 +190,7 @@ class RNNTDecoder(nn.Module):
 
         return ys_emb, new_dstate
 
-    def greedy(self, eouts, elens, decode_ctc_weight=0):
+    def _greedy(self, eouts, elens, decode_ctc_weight=0):
         """ Greedy decoding
         """
         if decode_ctc_weight == 1:
@@ -237,3 +237,7 @@ class RNNTDecoder(nn.Module):
             aligns.append(align)
 
         return hyps, scores, logits, aligns
+
+    def decode(self, eouts, elens, beam_width=1, len_weight=0, decode_ctc_weight=0):
+        if beam_width <= 1:
+            return self._greedy(eouts, elens, decode_ctc_weight)

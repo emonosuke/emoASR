@@ -134,9 +134,9 @@ class TransformerDecoder(nn.Module):
         logits = self.output(ys_in)
         return logits
 
-    def beam_search(
-        self, eouts, elens, beam_width=1, len_weight=0, decode_ctc_weight=0
-    ):
+    def decode(self, eouts, elens, beam_width=1, len_weight=0, decode_ctc_weight=0):
+        """ Beam search decoding
+        """
         bs = eouts.size(0)
         assert bs == 1
 
@@ -197,4 +197,7 @@ class TransformerDecoder(nn.Module):
         results = sorted(results, key=lambda x: x["score"], reverse=True)
         hyps = [result["hyp"] for result in results]
         scores = [result["score"] for result in results]
-        return hyps, scores
+        logits = None
+        aligns = None
+
+        return hyps, scores, logits, aligns

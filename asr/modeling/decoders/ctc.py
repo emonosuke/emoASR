@@ -133,11 +133,10 @@ class CTCDecoder(nn.Module):
 
         return loss, loss_dict, logits
 
-    def greedy(self, eouts, elens, decode_ctc_weight=0):
-        # NOTE: `decode_ctc_weight` is not used
-
+    def _greedy(self, eouts, elens):
+        """ Greedy decoding
+        """
         bs = eouts.size(0)
-
         logits = self.output(eouts)
         best_paths = logits.argmax(-1)
 
@@ -155,3 +154,7 @@ class CTCDecoder(nn.Module):
             aligns.append(indices)
 
         return hyps, scores, logits, aligns
+
+    def decode(self, eouts, elens, beam_width=1, len_weight=0, decode_ctc_weight=0):
+        if beam_width <= 1:
+            return self._greedy(eouts, elens)
