@@ -11,7 +11,7 @@ import torch.nn as nn
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../")
 sys.path.append(EMOASR_ROOT)
 
-from asr.criteria import LabelSmoothingLoss
+from asr.criteria import DistillLoss, LabelSmoothingLoss
 from asr.modeling.decoders.ctc import CTCDecoder
 from asr.modeling.model_utils import make_src_mask, make_tgt_mask
 from asr.modeling.transformer import PositionalEncoder, TransformerDecoderLayer
@@ -27,6 +27,7 @@ class TransformerDecoder(nn.Module):
         self.pe = PositionalEncoder(params.dec_hidden_size, params.dropout_dec_rate)
         self.dec_num_layers = params.dec_num_layers
 
+        # TODO: rename to `decoders`
         self.transformers = nn.ModuleList()
         for _ in range(self.dec_num_layers):
             self.transformers += [
@@ -49,6 +50,7 @@ class TransformerDecoder(nn.Module):
 
         self.cmlm = cmlm
         if self.cmlm:
+            # TODO: label smoothing
             self.loss_fn = MaskedLMLoss(vocab_size=params.vocab_size)
         else:
             self.loss_fn = LabelSmoothingLoss(
@@ -59,9 +61,14 @@ class TransformerDecoder(nn.Module):
             )
 
         self.kd_weight = params.kd_weight
-        # TODO: distillation
         if self.kd_weight > 0:
-            pass
+            self.loss_fn = DistillLoss(
+                vocab_size=params.vocab_size,
+                soft_label_weight=params.kd_weight,
+                lsm_prob=params.lsm_prob,
+                normalize_length=params.loss_normalize_length,
+                normalize_batch=params.loss_normalize_batch,
+            )
 
         self.eos_id = params.eos_id
         self.max_decode_ylen = params.max_decode_ylen
@@ -101,13 +108,22 @@ class TransformerDecoder(nn.Module):
         if ys_out is None:
             return logits
 
-        if self.cmlm:
-            loss_transformer = self.loss_fn(logits, labels=ys_out, ylens=None)
-        else:
-            loss_transformer = self.loss_fn(logits, ys_out, ylens + 1)
+        if self.kd_weight > 0 and soft_labels is not None:
+            loss_attn_kd, loss_kd, loss_attn = self.loss_fn(
+                logits, ys_out, soft_labels, ylens
+            )
 
-        loss += loss_transformer
-        loss_dict["loss_transformer"] = loss_transformer
+            loss += loss_attn_kd
+            loss_dict["loss_kd"] = loss_kd
+            loss_dict["loss_attn"] = loss_attn
+        else:
+            if self.cmlm:
+                loss_attn = self.loss_fn(logits, labels=ys_out, ylens=None)
+            else:
+                loss_attn = self.loss_fn(logits, ys_out, ylens + 1)
+
+            loss += loss_attn
+            loss_dict["loss_attn"] = loss_attn
 
         if self.mtl_ctc_weight > 0:
             # NOTE: KD is not applied to auxiliary CTC

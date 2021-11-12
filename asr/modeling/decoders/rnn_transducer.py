@@ -102,7 +102,7 @@ class RNNTDecoder(nn.Module):
         assert log_probs.size(2) == ys.size(1) + 1
 
         # NOTE: rnnt_loss only accepts ys, elens, ylens with torch.int
-        loss_transducer = warp_rnnt.rnnt_loss(
+        loss_rnnt = warp_rnnt.rnnt_loss(
             log_probs,
             ys.int(),
             elens.int(),
@@ -112,8 +112,8 @@ class RNNTDecoder(nn.Module):
             blank=self.blank_id,
             gather=False,
         )
-        loss += loss_transducer  # main loss
-        loss_dict["loss_transducer"] = loss_transducer
+        loss += loss_rnnt  # main loss
+        loss_dict["loss_rnnt"] = loss_rnnt
 
         if self.mtl_ctc_weight > 0:
             # NOTE: KD is not applied to auxiliary CTC

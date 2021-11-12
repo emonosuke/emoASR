@@ -70,6 +70,8 @@ class ASRDataset(Dataset):
             with open(params.kd_label_path, "rb") as f:
                 self.data_kd = pickle.load(f)
             logging.info(f"kd labels: {params.kd_label_path}")
+
+            self.add_eos = params.decoder_type == "transformer"
         else:
             self.data_kd = None
 
@@ -113,15 +115,12 @@ class ASRDataset(Dataset):
 
             if utt_id_nosp in self.data_kd:
                 data_kd_utt = self.data_kd[utt_id_nosp]
-                soft_label = create_soft_label(
-                    data_kd_utt, ylen, self.vocab_size, self.lsm_prob
-                )
             else:
                 data_kd_utt = []
                 logging.warning(f"soft label: {utt_id_nosp} not found")
 
             soft_label = create_soft_label(
-                data_kd_utt, ylen, self.vocab_size, self.lsm_prob
+                data_kd_utt, ylen, self.vocab_size, self.lsm_prob, add_eos=self.add_eos
             )
         else:
             soft_label = None
@@ -150,7 +149,7 @@ class ASRDataset(Dataset):
         # ys = [[y_1, ..., y_n], ...]
         ret["ys"] = pad_sequence(
             ys_list, batch_first=True, padding_value=eos_id
-        )  # without <eos>
+        )  # NOTE: without <eos>
 
         # add <sos> and <eos> here
         ys_eos_list = [[eos_id] + y.tolist() + [eos_id] for y in ys_list]
@@ -163,10 +162,10 @@ class ASRDataset(Dataset):
         ret["xlens"] = torch.tensor(xlens)
         ret["ys_in"] = pad_sequence(
             ys_in, batch_first=True, padding_value=eos_id
-        )  # <sos> is added
+        )  # NOTE: <sos> is added
         ret["ys_out"] = pad_sequence(
             ys_out, batch_first=True, padding_value=eos_id
-        )  # <eos> is added
+        )  # NOTE: <eos> is added
 
         # NOTE: ys_in and ys_out have length ylens+1
         ret["ylens"] = torch.tensor(ylens, dtype=torch.long)
@@ -240,12 +239,19 @@ class ASRBatchSampler(Sampler):
         return len(self.indices_batches)
 
 
-def create_soft_label(data_kd_utt, ylen, vocab_size, lsm_prob):
-    soft_label = torch.zeros(ylen, vocab_size)
+def create_soft_label(data_kd_utt, ylen, vocab_size, lsm_prob, add_eos=False):
+    if add_eos:
+        soft_label = torch.zeros(ylen + 1, vocab_size)  # same length as `ys_out`
+    else:
+        soft_label = torch.zeros(ylen, vocab_size)
 
     for i, topk_probs in enumerate(data_kd_utt):
         soft_label[i, :] = lsm_prob / (vocab_size - len(topk_probs))
         for v, prob in topk_probs:
             soft_label[i, v] = prob.astype(np.float64) * (1 - lsm_prob)
+
+    if add_eos:
+        soft_label[-1, :] = lsm_prob / (vocab_size - 1)
+        soft_label[-1, eos_id] = 1.0 * (1 - lsm_prob)
 
     return soft_label

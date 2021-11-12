@@ -28,7 +28,6 @@ class CTCDecoder(nn.Module):
 
         self.output = nn.Linear(params.enc_hidden_size, params.vocab_size)
 
-        # self.ctc_loss = nn.CTCLoss(blank=self.blank_id, reduction="sum")
         self.ctc_loss = nn.CTCLoss(
             blank=self.blank_id, reduction="sum", zero_infinity=True
         )

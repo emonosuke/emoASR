@@ -35,6 +35,7 @@ class TransformerEncoder(nn.Module):
 
         self.pe = PositionalEncoder(input_size, dropout_rate=params.dropout_enc_rate)
 
+        # TODO: rename to `encoders`
         self.transformers = nn.ModuleList()
         for _ in range(self.enc_num_layers):
             self.transformers += [

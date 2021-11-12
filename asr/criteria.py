@@ -46,9 +46,58 @@ class LabelSmoothingLoss(nn.Module):
         return loss
 
 
-class WordDistillLoss(nn.Module):
-    def __init__(self):
-        pass
+class DistillLoss(nn.Module):
+    def __init__(
+        self,
+        vocab_size,
+        soft_label_weight,
+        lsm_prob=0,
+        normalize_length=False,
+        normalize_batch=True,
+    ):
+        super(DistillLoss, self).__init__()
+
+        self.vocab_size = vocab_size
+        self.soft_label_weight = soft_label_weight
+        self.lsm_prob = lsm_prob
+        self.normalize_length = normalize_length
+        self.normalize_batch = normalize_batch
+
+    def forward(self, logits, ys, soft_labels, ylens):
+        bs = logits.size(0)
+        hard_labels = to_onehot_lsm(ys, self.vocab_size, self.lsm_prob)
+        loss = 0
+        loss_soft = 0
+        loss_hard = 0
+
+        for b in range(bs):
+            ylen = ylens[b]
+
+            loss_soft_b = torch.sum(
+                torch.log_softmax(logits[b, :ylen], dim=-1) * soft_labels[b, :ylen]
+            )
+            loss_hard_b = torch.sum(
+                torch.log_softmax(logits[b, :ylen], dim=-1) * hard_labels[b, :ylen]
+            )
+            if self.normalize_length:
+                loss_soft_b /= ylen
+                loss_hard_b /= ylen
+
+            # label interpolation
+            loss_b = (
+                self.soft_label_weight * loss_soft_b
+                + (1 - self.soft_label_weight) * loss_hard_b
+            )
+            loss -= loss_b
+            loss_soft -= loss_soft_b
+            loss_hard -= loss_hard_b
+
+        if self.normalize_batch:
+            loss /= bs
+            loss_soft /= bs
+            loss_hard /= bs
+
+        return loss, loss_soft, loss_hard
 
 
 class CTCAlignDistillLoss(nn.Module):
