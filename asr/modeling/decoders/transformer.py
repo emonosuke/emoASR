@@ -109,21 +109,23 @@ class TransformerDecoder(nn.Module):
             return logits
 
         if self.kd_weight > 0 and soft_labels is not None:
-            loss_attn_kd, loss_kd, loss_attn = self.loss_fn(
-                logits, ys_out, soft_labels, ylens
+            # NOTE: ys_out (label) have length ylens+1
+            loss_att_kd, loss_kd, loss_att = self.loss_fn(
+                logits, ys_out, soft_labels, ylens + 1
             )
 
-            loss += loss_attn_kd
+            loss += loss_att_kd
             loss_dict["loss_kd"] = loss_kd
-            loss_dict["loss_attn"] = loss_attn
+            loss_dict["loss_att"] = loss_att
         else:
             if self.cmlm:
-                loss_attn = self.loss_fn(logits, labels=ys_out, ylens=None)
+                loss_att = self.loss_fn(logits, labels=ys_out, ylens=None)
             else:
-                loss_attn = self.loss_fn(logits, ys_out, ylens + 1)
+                # NOTE: ys_out (label) have length ylens+1
+                loss_att = self.loss_fn(logits, ys_out, ylens + 1)
 
-            loss += loss_attn
-            loss_dict["loss_attn"] = loss_attn
+            loss += loss_att
+            loss_dict["loss_att"] = loss_att
 
         if self.mtl_ctc_weight > 0:
             # NOTE: KD is not applied to auxiliary CTC
