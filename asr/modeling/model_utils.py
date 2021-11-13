@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
 
 
@@ -7,7 +8,6 @@ def make_nopad_mask(lengths):
     NOTE: faster implementation of the following
     mask = [[bool(l < length) for l in range(max(lengths))] for length in lengths]
     """
-
     if torch.is_tensor(lengths):
         lens = lengths.tolist()
     else:
@@ -41,6 +41,11 @@ def make_tgt_mask(ylens: torch.Tensor):
     maxlen = nopad_mask.size(-1)
     causal_mask = make_causal_mask(maxlen).unsqueeze(0)
     return (nopad_mask & causal_mask).to(ylens.device)
+
+
+class Swish(nn.Module):
+    def forward(self, x):
+        return x * torch.sigmoid(x)
 
 
 if __name__ == "__main__":

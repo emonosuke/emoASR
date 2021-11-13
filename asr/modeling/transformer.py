@@ -1,8 +1,15 @@
 import math
+import os
+import sys
 
 import numpy as np
 import torch
 import torch.nn as nn
+
+EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../")
+sys.path.append(EMOASR_ROOT)
+
+from asr.modeling.model_utils import Swish
 
 
 class PositionalEncoder(nn.Module):
@@ -93,12 +100,19 @@ class MultiHeadedAttention(nn.Module):
 
 
 class PositionwiseFeedForward(nn.Module):
-    def __init__(self, input_size, intermediate_size, dropout_rate):
+    def __init__(
+        self, input_size, intermediate_size, dropout_rate, activation_type="relu"
+    ):
         super(PositionwiseFeedForward, self).__init__()
         self.w1 = nn.Linear(input_size, intermediate_size)
         self.w2 = nn.Linear(intermediate_size, input_size)
         self.dropout = nn.Dropout(dropout_rate)
-        self.activation = nn.ReLU()
+
+        if activation_type == "relu":
+            # TODO: rename to `act`
+            self.activation = nn.ReLU()
+        elif activation_type == "swish":
+            self.activation = Swish()  # for Conformer
 
     def forward(self, x):
         return self.w2(self.dropout(self.activation(self.w1(x))))
@@ -109,28 +123,31 @@ class TransformerEncoderLayer(nn.Module):
         self,
         enc_num_attention_heads,
         enc_hidden_size,
-        enc_itermediate_size,
+        enc_intermediate_size,
         dropout_enc_rate,
         dropout_attn_rate,
+        pos_encode_type="abs",
     ):
         super(TransformerEncoderLayer, self).__init__()
         self.self_attn = MultiHeadedAttention(
             enc_num_attention_heads, enc_hidden_size, dropout_attn_rate
         )
         self.feed_forward = PositionwiseFeedForward(
-            enc_hidden_size, enc_itermediate_size, dropout_enc_rate
+            enc_hidden_size, enc_intermediate_size, dropout_enc_rate
         )
+        # TODO: set `eps` to 1e-5 (default)
+        # TODO: rename to `norm_self_attn` and `norm_ff`
         self.norm1 = nn.LayerNorm(enc_hidden_size, eps=1e-12)
         self.norm2 = nn.LayerNorm(enc_hidden_size, eps=1e-12)
         self.dropout = nn.Dropout(dropout_enc_rate)
 
-    def forward(self, x, mask):
+    def forward(self, x, mask, pos_emb=None):
         residual = x
         x = self.norm1(x)  # normalize before
         x_q = x
         x = residual + self.dropout(self.self_attn(x_q, x, x, mask))
         residual = x
-        x = self.norm2(x)
+        x = self.norm2(x)  # normalize before
         x = residual + self.dropout(self.feed_forward(x))
 
         return x, mask
@@ -144,6 +161,7 @@ class TransformerDecoderLayer(nn.Module):
         dec_intermediate_size,
         dropout_dec_rate,
         dropout_attn_rate,
+        pos_encode_type="abs",
     ):
         super(TransformerDecoderLayer, self).__init__()
         self.dec_hidden_size = dec_hidden_size
@@ -156,6 +174,7 @@ class TransformerDecoderLayer(nn.Module):
         self.feed_forward = PositionwiseFeedForward(
             dec_hidden_size, dec_intermediate_size, dropout_dec_rate
         )
+        # TODO: set `eps` to 1e-5 (default)
         self.norm1 = nn.LayerNorm(dec_hidden_size, eps=1e-12)
         self.norm2 = nn.LayerNorm(dec_hidden_size, eps=1e-12)
         self.norm3 = nn.LayerNorm(dec_hidden_size, eps=1e-12)

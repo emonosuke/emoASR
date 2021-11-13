@@ -28,8 +28,10 @@ class ASR(nn.Module):
         logging.info(f"encoder type: {self.encoder_type}")
         if self.encoder_type == "rnn":
             self.encoder = RNNEncoder(params)
-        elif self.encoder_type == "transformer":
-            self.encoder = TransformerEncoder(params)
+        elif self.encoder_type in ["transformer", "conformer"]:
+            self.encoder = TransformerEncoder(
+                params, is_conformer=(self.encoder_type == "conformer")
+            )
 
         logging.info(f"decoder type: {self.decoder_type}")
         if self.decoder_type == "ctc":

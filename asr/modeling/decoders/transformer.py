@@ -45,6 +45,7 @@ class TransformerDecoder(nn.Module):
             self.ctc = CTCDecoder(params)
 
         # normalize before
+        # TODO: set `eps` to 1e-5 (default)
         self.norm = nn.LayerNorm(params.dec_hidden_size, eps=1e-12)
         self.output = nn.Linear(params.dec_hidden_size, params.vocab_size)
 
