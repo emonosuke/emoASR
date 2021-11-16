@@ -67,11 +67,25 @@ class ASR(nn.Module):
         )
         return loss, loss_dict
 
-    def decode(self, xs, xlens, beam_width=1, len_weight=0, decode_ctc_weight=0):
+    def decode(
+        self,
+        xs,
+        xlens,
+        beam_width=1,
+        len_weight=0,
+        decode_ctc_weight=0,
+        decode_phone=False,
+    ):
         with torch.no_grad():
-            eouts, elens, _ = self.encoder(xs, xlens)
+            eouts, elens, eouts_inter = self.encoder(xs, xlens)
             hyps, scores, logits, aligns = self.decoder.decode(
-                eouts, elens, beam_width, len_weight, decode_ctc_weight
+                eouts,
+                elens,
+                eouts_inter,
+                beam_width,
+                len_weight,
+                decode_ctc_weight,
+                decode_phone,
             )
 
         return hyps, scores, logits, aligns

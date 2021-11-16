@@ -195,7 +195,8 @@ class RNNTDecoder(nn.Module):
         """
         if decode_ctc_weight == 1:
             print("CTC is used")
-            return self.ctc.greedy(eouts, elens)
+            # greedy
+            return self.ctc.decode(eouts, elens, beam_width=1)
 
         bs = eouts.size(0)
 
@@ -238,6 +239,15 @@ class RNNTDecoder(nn.Module):
 
         return hyps, scores, logits, aligns
 
-    def decode(self, eouts, elens, beam_width=1, len_weight=0, decode_ctc_weight=0):
+    def decode(
+        self,
+        eouts,
+        elens,
+        eouts_inter=None,
+        beam_width=1,
+        len_weight=0,
+        decode_ctc_weight=0,
+        decode_phone=False,
+    ):
         if beam_width <= 1:
             return self._greedy(eouts, elens, decode_ctc_weight)

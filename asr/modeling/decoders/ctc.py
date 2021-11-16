@@ -132,11 +132,16 @@ class CTCDecoder(nn.Module):
 
         return loss, loss_dict, logits
 
-    def _greedy(self, eouts, elens):
+    def _greedy(self, eouts, elens, decode_phone=False):
         """ Greedy decoding
         """
         bs = eouts.size(0)
-        logits = self.output(eouts)
+
+        if decode_phone:
+            logits = self.phone_output(eouts)
+        else:
+            logits = self.output(eouts)
+
         best_paths = logits.argmax(-1)
 
         hyps = []
@@ -154,6 +159,18 @@ class CTCDecoder(nn.Module):
 
         return hyps, scores, logits, aligns
 
-    def decode(self, eouts, elens, beam_width=1, len_weight=0, decode_ctc_weight=0):
+    def decode(
+        self,
+        eouts,
+        elens,
+        eouts_inter,
+        beam_width=1,
+        len_weight=0,
+        decode_ctc_weight=0,
+        decode_phone=False,
+    ):
+        if decode_phone and self.hie_mtl_phone:
+            eouts = eouts_inter
         if beam_width <= 1:
-            return self._greedy(eouts, elens)
+            hyps, scores, logits, aligns = self._greedy(eouts, elens, decode_phone)
+        return hyps, scores, logits, aligns

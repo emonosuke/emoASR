@@ -153,10 +153,24 @@ class TransformerDecoder(nn.Module):
         logits = self.output(ys_in)
         return logits
 
-    def decode(self, eouts, elens, beam_width=1, len_weight=0, decode_ctc_weight=0):
+    def decode(
+        self,
+        eouts,
+        elens,
+        eouts_inter=None,
+        beam_width=1,
+        len_weight=0,
+        decode_ctc_weight=0,
+        decode_phone=False,
+    ):
         """ Beam search decoding
         """
         bs = eouts.size(0)
+        if decode_ctc_weight == 1:
+            print("CTC is used")
+            # greedy
+            return self.ctc.decode(eouts, elens, beam_width=1)
+
         assert bs == 1
 
         # init

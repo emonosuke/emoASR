@@ -33,7 +33,10 @@ class ScheduledOptimizer:
             self.lr_decay_start_epoch = params.lr_decay_start_epoch
             self.lr_decay_rate = params.lr_decay_rate
         elif self.schedule_type == "noam":
-            self.model_dim = params.enc_hidden_size
+            if hasattr(params, "enc_hidden_size"):
+                self.model_dim = params.enc_hidden_size
+            else:
+                self.model_dim = params.hidden_size
 
     @property
     def param_groups(self):

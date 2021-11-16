@@ -16,10 +16,11 @@ EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
 from lm.modeling.lm import LM
+from lm.modeling.p2w import P2W
 from utils.average_checkpoints import model_average
 from utils.configure import load_config
 from utils.converters import ints2str, np2tensor, tensor2np
-from utils.log import insert_comment
+from utils.log import insert_comment, print_topk_probs
 from utils.paths import get_eval_path, get_model_path, get_results_dir, rel_to_abs_path
 from utils.vocab import Vocab
 
@@ -32,7 +33,7 @@ torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
 
 
-def aggregate_logits(logits, aligns, blank_id, mask_id, reduction="max"):
+def aggregate_logits(logits, aligns, blank_id, reduction="max"):
     assert logits.size(0) == len(aligns)
     xlen = logits.size(0)
 
@@ -68,40 +69,61 @@ def aggregate_logits(logits, aligns, blank_id, mask_id, reduction="max"):
     return np.array(token_probs_allv), np.array(token_probs_v)
 
 
-def test_step(model, lm, data, blank_id, mask_id, mask_th, device, vocab, vocab_size):
+def test_step(
+    model,
+    lm,
+    data,
+    blank_id,
+    mask_id,
+    mask_th,
+    device,
+    vocab,
+    vocab_size,
+    vocab_phone=None,
+    debug=False,
+):
     utt_id = data["utt_ids"][0]
     xs = data["xs"].to(device)
     xlens = data["xlens"].to(device)
     reftext = data["texts"][0]
 
-    # ASR
+    # ASR (word)
     hyps, scores, logits, aligns = model.decode(xs, xlens, beam_width=0, len_weight=0)
+    hyp = np.array(hyps[0])
+
+    # ASR (phone)
+    if vocab_phone is not None:
+        hyps_phone, _, _, _ = model.decode(
+            xs, xlens, beam_width=0, len_weight=0, decode_phone=True
+        )
+        hyp_phone = np.array(hyps_phone[0])
 
     if len(hyps[0]) < 1:
         return utt_id, [], [], reftext
 
-    hyp = np.array(hyps[0])
     hyp_masked = hyp.copy()
-    token_probs, token_probs_v = aggregate_logits(
-        logits[0], aligns[0], blank_id, mask_id
-    )
+    token_probs, token_probs_v = aggregate_logits(logits[0], aligns[0], blank_id)
     assert len(hyp) == len(token_probs)
     assert len(hyp) == len(token_probs_v)
 
     # mask less confident tokens
     mask_indices = token_probs_v < mask_th
     hyp_masked[mask_indices] = mask_id
-    logging.debug(f"{' '.join(vocab.ids2tokens(hyp))}")
-    logging.debug(
-        f"{' '.join(vocab.ids2tokens(hyp_masked))} ({sum(mask_indices):d}/{len(mask_indices):d} masked)"
-    )
+
+    num_masked = sum(mask_indices)
+    num_tokens = len(mask_indices)
 
     y = np2tensor(hyp_masked)
-    logits = lm(y.unsqueeze(0).to(device))
+
+    if vocab_phone is None:
+        logits = lm(y.unsqueeze(0).to(device))
+    else:
+        p = np2tensor(hyp_phone)
+        logits = lm(y.unsqueeze(0).to(device), ps=p.unsqueeze(0).to(device))
+
     lm_token_probs = tensor2np(torch.softmax(logits[0], dim=-1))
 
     # fusion
-    # TODO: smooth CTC probs
     token_probs_mix = (1 - args.lm_weight) * token_probs[
         :, :vocab_size
     ] + args.lm_weight * lm_token_probs[:, :vocab_size]
@@ -110,19 +132,61 @@ def test_step(model, lm, data, blank_id, mask_id, mask_th, device, vocab, vocab_
 
     hyp_cor = hyp.copy()
     hyp_cor[mask_indices] = y_gen[mask_indices]
-    logging.debug(f"{' '.join(vocab.ids2tokens(hyp_cor))}")
 
-    return utt_id, hyp, hyp_cor, reftext
+    if debug:
+        print(f"*** {utt_id} ***")
+        print(f"Ref.: {reftext}")
+        print(f"Hyp.(word): {' '.join(vocab.ids2tokens(hyp))}")
+        if vocab_phone is not None:
+            print(f"Hyp.(phone): {' '.join(vocab_phone.ids2tokens(hyp_phone))}")
+        print(
+            f"Hyp.(masked): {' '.join(vocab.ids2tokens(hyp_masked))} ({num_masked:d}/{num_tokens:d} masked)"
+        )
+        print("ASR probs:")
+        token_probs_masked = token_probs[mask_indices]
+        print_topk_probs(token_probs_masked, vocab=vocab)
+        print("LM probs:")
+        lm_token_probs_masked = lm_token_probs[mask_indices]
+        print_topk_probs(lm_token_probs_masked, vocab=vocab)
+        print(f"Hyp.(correct): {' '.join(vocab.ids2tokens(hyp_cor))}")
+
+    return utt_id, hyp, hyp_cor, reftext, num_masked, num_tokens
 
 
-def test(model, lm, dataloader, vocab, vocab_size, device, blank_id, mask_id, mask_th):
+def test(
+    model,
+    lm,
+    dataloader,
+    vocab,
+    vocab_size,
+    device,
+    blank_id,
+    mask_id,
+    mask_th,
+    vocab_phone=None,
+    debug=False,
+):
     rows = []  # utt_id, token_id, text, reftext
 
+    num_masked_all, num_tokens_all = 0, 0
+
     for i, data in enumerate(dataloader):
-        utt_id, hyp, hyp_cor, reftext = test_step(
-            model, lm, data, blank_id, mask_id, mask_th, device, vocab, vocab_size
+        utt_id, hyp, hyp_cor, reftext, num_masked, num_tokens = test_step(
+            model,
+            lm,
+            data,
+            blank_id,
+            mask_id,
+            mask_th,
+            device,
+            vocab,
+            vocab_size,
+            vocab_phone=vocab_phone,
+            debug=debug,
         )
         text = ""
+        num_masked_all += num_masked
+        num_tokens_all += num_tokens
 
         if len(hyp) < 1:
             token_id = None
@@ -134,7 +198,9 @@ def test(model, lm, dataloader, vocab, vocab_size, device, blank_id, mask_id, ma
 
         rows.append([utt_id, token_id, text, reftext])
 
-        logging.debug(f"*** {utt_id}({(i+1):d}/{len(dataloader):d}): {text}")
+        # logging.debug(f"*** {utt_id}({(i+1):d}/{len(dataloader):d}): {text}")
+
+    logging.info(f"masked: {num_masked_all:d} / {num_tokens_all:d}")
 
     return rows
 
@@ -150,16 +216,10 @@ def main(args):
 
     params = load_config(args.conf)
 
-    if args.debug:
-        logging.basicConfig(
-            format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
-            level=logging.DEBUG,
-        )
-    else:
-        logging.basicConfig(
-            format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
-            level=logging.INFO,
-        )
+    logging.basicConfig(
+        format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
+        level=logging.INFO,
+    )
 
     logging.info(f"***** {' '.join(sys.argv)}")
     logging.info(
@@ -182,10 +242,16 @@ def main(args):
 
     # LM
     lm_params = load_config(args.lm_conf)
-    assert lm_params.lm_type == "bert"
+    assert lm_params.lm_type in ["bert", "pbert"]
     lm_path = get_model_path(args.lm_conf, args.lm_ep)
     logging.info(f"LM: {lm_path}")
-    lm = LM(lm_params, phase="test")
+    lm_tag = lm_params.lm_type if args.lm_tag is None else args.lm_tag
+
+    if lm_params.lm_type == "bert":
+        lm = LM(lm_params, phase="test")
+    elif lm_params.lm_type == "pbert":
+        lm = P2W(lm_params, phase="test")
+
     lm.load_state_dict(torch.load(lm_path, map_location=device))
     lm.to(device)
     lm.eval()
@@ -207,11 +273,16 @@ def main(args):
         collate_fn=dataset.collate_fn,
         num_workers=1,
     )
+
     vocab = Vocab(rel_to_abs_path(params.vocab_path))
+    if lm_params.lm_type == "pbert":
+        vocab_phone = Vocab(rel_to_abs_path(params.phone_vocab_path))
+    else:
+        vocab_phone = None
 
     results_dir = get_results_dir(args.conf)
     os.makedirs(results_dir, exist_ok=True)
-    result_file = f"result_{data_tag}_cor{lm_params.lm_type}_lm{args.lm_weight}_maskth{args.mask_th}_ep{args.ep}.tsv"
+    result_file = f"result_{data_tag}_{lm_tag}_corr{args.lm_weight}_maskth{args.mask_th}_ep{args.ep}.tsv"
     result_path = os.path.join(results_dir, result_file)
     logging.info(f"result: {result_path}")
     if os.path.exists(result_path):
@@ -227,6 +298,8 @@ def main(args):
         params.blank_id,
         lm_params.mask_id,
         mask_th=args.mask_th,
+        vocab_phone=vocab_phone,
+        debug=args.debug,
     )
 
     data = pd.DataFrame(results, columns=["utt_id", "token_id", "text", "reftext"])
@@ -251,6 +324,7 @@ if __name__ == "__main__":
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--data_tag", type=str, default="test")
+    parser.add_argument("--lm_tag", type=str, default=None)
     parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
