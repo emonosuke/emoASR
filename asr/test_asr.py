@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
+from lm.modeling.lm import LM
 from utils.average_checkpoints import model_average
 from utils.configure import load_config
 from utils.converters import ints2str, strip_eos
@@ -89,7 +90,6 @@ def test(
             text = ""
             logging.warning(f"cannot decode {utt_id}")
         else:
-            # NOTE: strip <eos> (or <sos>) here
             token_id = ints2str(strip_eos(hyps[0], eos_id))
             text = vocab.ids2text(strip_eos(hyps[0], eos_id))
 
@@ -118,7 +118,7 @@ def main(args):
         if args.decode_ctc_weight is not None
         else params.decode_ctc_weight
     )
-    lm_weight = args.lm_weight if args.lm_weight > 0 else params.lm_weight
+    lm_weight = args.lm_weight if args.lm_weight is not None else params.lm_weight
 
     if args.debug:
         logging.basicConfig(
@@ -151,10 +151,21 @@ def main(args):
 
     # LM
     if lm_weight > 0:
+        lm_conf = args.lm_conf if args.lm_conf is not None else params.lm_conf
+        if args.lm_ep is not None:
+            lm_path = get_model_path(lm_conf, args.lm_ep)
+        else:
+            lm_path = params.lm_path
+        logging.info(f"LM: {lm_path}")
+        lm_params = load_config(lm_conf)
+        lm = LM(lm_params, phase="test")
+        lm.load_state_dict(torch.load(lm_path, map_location=device))
         lm.to(device)
         lm.eval()
+        lm_tag = lm_params.lm_type if args.lm_tag is None else args.lm_tag
     else:
         lm = None
+        lm_tag = ""
 
     data_path = get_eval_path(args.data)
     data_tag = (
@@ -206,7 +217,7 @@ def main(args):
     if args.utt_id is None:
         results_dir = get_results_dir(args.conf)
         os.makedirs(results_dir, exist_ok=True)
-        result_file = f"result_{data_tag}_beam{beam_width}_len{len_weight}_ctc{decode_ctc_weight}_ep{args.ep}.tsv"
+        result_file = f"result_{data_tag}_beam{beam_width}_len{len_weight}_ctc{decode_ctc_weight}_lm{lm_weight}{lm_tag}_ep{args.ep}.tsv"
         result_path = os.path.join(results_dir, result_file)
         logging.info(f"result: {result_path}")
         if os.path.exists(result_path):
@@ -253,8 +264,10 @@ if __name__ == "__main__":
     parser.add_argument("--beam_width", type=int, default=None)
     parser.add_argument("--len_weight", type=float, default=None)
     parser.add_argument("--decode_ctc_weight", type=float, default=None)
-    parser.add_argument("--lm_weight", type=float, default=0)
+    parser.add_argument("--lm_weight", type=float, default=None)
     parser.add_argument("--lm_conf", type=str, default=None)
+    parser.add_argument("--lm_ep", type=str, default=None)
+    parser.add_argument("--lm_tag", type=str, default=None)
     args = parser.parse_args()
 
     try:

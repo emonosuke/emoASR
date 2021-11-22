@@ -3,6 +3,7 @@
 Reference:
     https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/ctc.py
 """
+import logging
 import os
 import sys
 from itertools import groupby
@@ -232,7 +233,10 @@ class CTCDecoder(nn.Module):
                     }
                 )
 
-                print(hyp)
+                # NOTE: update LM
+                if lm_weight > 0:
+                    hyp_tensor = torch.tensor([hyp], device=eouts.device)
+                    lm_log_probs, _ = lm.predict(hyp_tensor, state=None)
 
                 # case 2. hyp is extended
                 new_p_b = LOG_0
@@ -249,7 +253,7 @@ class CTCDecoder(nn.Module):
                     score_asr = np.logaddexp(new_p_b, new_p_nb)
                     score_len = len_weight * (len(strip_eos(hyp, self.eos_id)) + 1)
                     if lm_weight > 0:
-                        score_lm += lm_weight * lm_log_prob[v].item()
+                        score_lm += lm_weight * lm_log_probs[v].item()
 
                     new_beams.append(
                         {
@@ -290,6 +294,8 @@ class CTCDecoder(nn.Module):
         if decode_phone and self.hie_mtl_phone:
             eouts = eouts_inter
         if beam_width <= 1:
+            if lm_weight > 0:
+                logging.warning("greedy decoding: LM is not used")
             hyps, scores, logits, aligns = self._greedy(eouts, elens, decode_phone)
         else:
             hyps, scores, logits = self._beam_search(

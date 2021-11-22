@@ -23,7 +23,8 @@ class TransformerDecoder(nn.Module):
     def __init__(self, params, cmlm=False):
         super(TransformerDecoder, self).__init__()
 
-        self.embed = nn.Embedding(params.vocab_size, params.dec_hidden_size)
+        self.vocab_size = params.vocab_size
+        self.embed = nn.Embedding(self.vocab_size, params.dec_hidden_size)
         self.pe = PositionalEncoder(params.dec_hidden_size, params.dropout_dec_rate)
         self.dec_num_layers = params.dec_num_layers
 
@@ -47,15 +48,15 @@ class TransformerDecoder(nn.Module):
         # normalize before
         # TODO: set `eps` to 1e-5 (default)
         self.norm = nn.LayerNorm(params.dec_hidden_size, eps=1e-12)
-        self.output = nn.Linear(params.dec_hidden_size, params.vocab_size)
+        self.output = nn.Linear(params.dec_hidden_size, self.vocab_size)
 
         self.cmlm = cmlm
         if self.cmlm:
             # TODO: label smoothing
-            self.loss_fn = MaskedLMLoss(vocab_size=params.vocab_size)
+            self.loss_fn = MaskedLMLoss(vocab_size=self.vocab_size)
         else:
             self.loss_fn = LabelSmoothingLoss(
-                vocab_size=params.vocab_size,
+                vocab_size=self.vocab_size,
                 lsm_prob=params.lsm_prob,
                 normalize_length=params.loss_normalize_length,
                 normalize_batch=params.loss_normalize_batch,
@@ -64,7 +65,7 @@ class TransformerDecoder(nn.Module):
         self.kd_weight = params.kd_weight
         if self.kd_weight > 0:
             self.loss_fn = DistillLoss(
-                vocab_size=params.vocab_size,
+                vocab_size=self.vocab_size,
                 soft_label_weight=params.kd_weight,
                 lsm_prob=params.lsm_prob,
                 normalize_length=params.loss_normalize_length,
@@ -194,8 +195,8 @@ class TransformerDecoder(nn.Module):
                 scores = scores_asr
 
                 if lm_weight > 0:
-                    scores_lm = lm.predict()
-                    scores += lm_weight * scores_lm
+                    scores_lm, _ = lm.predict(ys_in, state=None)
+                    scores += lm_weight * scores_lm[: self.vocab_size]
 
                 scores_topk, v_topk = torch.topk(scores, k=beam_width, dim=1)
 
