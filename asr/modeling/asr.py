@@ -74,6 +74,8 @@ class ASR(nn.Module):
         beam_width=1,
         len_weight=0,
         decode_ctc_weight=0,
+        lm=None,
+        lm_weight=0,
         decode_phone=False,
     ):
         with torch.no_grad():
@@ -85,6 +87,8 @@ class ASR(nn.Module):
                 beam_width,
                 len_weight,
                 decode_ctc_weight,
+                lm,
+                lm_weight,
                 decode_phone,
             )
 

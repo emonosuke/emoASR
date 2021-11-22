@@ -145,7 +145,7 @@ class TransformerDecoder(nn.Module):
         ymask = make_tgt_mask(ylens_in)
 
         for layer_id in range(self.dec_num_layers):
-            ys_in, ymask, eouts, emask = self.transformers[layer_id](
+            ys_in, ymask, eouts, _ = self.transformers[layer_id](
                 ys_in, ymask, eouts, None
             )
 
@@ -161,6 +161,8 @@ class TransformerDecoder(nn.Module):
         beam_width=1,
         len_weight=0,
         decode_ctc_weight=0,
+        lm=None,
+        lm_weight=0,
         decode_phone=False,
     ):
         """ Beam search decoding
@@ -174,7 +176,7 @@ class TransformerDecoder(nn.Module):
         assert bs == 1
 
         # init
-        beam = {"hyp": [self.eos_id], "score": 0.0}
+        beam = {"hyp": [self.eos_id], "score": 0.0, "lm_state": None}
         beams = [beam]
 
         results = []
@@ -191,12 +193,16 @@ class TransformerDecoder(nn.Module):
                 )  # (1, vocab)
                 scores = scores_asr
 
-                scores_topk, ids_topk = torch.topk(scores, beam_width, dim=1)
+                if lm_weight > 0:
+                    scores_lm = lm.predict()
+                    scores += lm_weight * scores_lm
+
+                scores_topk, v_topk = torch.topk(scores, k=beam_width, dim=1)
 
                 for j in range(beam_width):
                     new_beam = {}
                     new_beam["score"] = beam["score"] + float(scores_topk[0, j])
-                    new_beam["hyp"] = beam["hyp"] + [int(ids_topk[0, j])]
+                    new_beam["hyp"] = beam["hyp"] + [int(v_topk[0, j])]
                     new_beams.append(new_beam)
 
             # update `beams`
@@ -208,14 +214,15 @@ class TransformerDecoder(nn.Module):
             for beam in beams:
                 # ended beams
                 if beam["hyp"][-1] == self.eos_id:
+                    hyp_noeos = strip_eos(beam["hyp"], self.eos_id)
                     # only <eos> is not acceptable
-                    if len(strip_eos(beam["hyp"], self.eos_id)) < 1:
+                    if len(hyp_noeos) < 1:
                         continue
 
                     # add length penalty
                     score = beam["score"] + len_weight * len(beam["hyp"])
 
-                    results.append({"hyp": beam["hyp"], "score": score})
+                    results.append({"hyp": hyp_noeos, "score": score})
 
                     if len(results) >= beam_width:
                         break
