@@ -32,8 +32,6 @@ from asr.modeling.asr import ASR
 torch.manual_seed(0)
 torch.cuda.manual_seed_all(0)
 
-# TODO: shallow fusion and rescoring
-
 
 def test_step(
     model, data, beam_width, len_weight, decode_ctc_weight, lm, lm_weight, device
@@ -62,8 +60,9 @@ def test(
     eos_id=2,
     num_samples=-1,
     sample_utt_id=None,
+    nbest=False,
 ):
-    rows = []  # utt_id, token_id, text, reftext
+    rows = []  # utt_id, (score,) token_id, text, reftext
 
     for i, data in enumerate(dataloader):
         if num_samples > 0 and (i + 1) > num_samples:
@@ -84,16 +83,24 @@ def test(
         )
         text = ""
 
-        # FIXME: len(hyps[0]) < 1 ?
-        if len(hyps) < 1:
-            token_id = None
-            text = ""
-            logging.warning(f"cannot decode {utt_id}")
-        else:
-            token_id = ints2str(strip_eos(hyps[0], eos_id))
+        if nbest:
+            for hyp, score in zip(hyps, scores):
+                token_id = ints2str(strip_eos(hyp, eos_id))
+                text = vocab.ids2text(strip_eos(hyp, eos_id))
+                rows.append([utt_id, score, token_id, text, reftext])
+            # for debug
             text = vocab.ids2text(strip_eos(hyps[0], eos_id))
-
-        rows.append([utt_id, token_id, text, reftext])
+        else:
+            # FIXME: len(hyps[0]) < 1 ?
+            if len(hyps) < 1:
+                token_id = None
+                text = ""
+                logging.warning(f"cannot decode {utt_id}")
+            else:
+                # top-1
+                token_id = ints2str(strip_eos(hyps[0], eos_id))
+                text = vocab.ids2text(strip_eos(hyps[0], eos_id))
+            rows.append([utt_id, token_id, text, reftext])
 
         logging.debug(f"{utt_id}({(i+1):d}/{len(dataloader):d}): {text}")
 
@@ -151,11 +158,15 @@ def main(args):
 
     # LM
     if lm_weight > 0:
-        lm_conf = args.lm_conf if args.lm_conf is not None else params.lm_conf
+        lm_conf = (
+            args.lm_conf
+            if args.lm_conf is not None
+            else rel_to_abs_path(params.lm_conf)
+        )
         if args.lm_ep is not None:
             lm_path = get_model_path(lm_conf, args.lm_ep)
         else:
-            lm_path = params.lm_path
+            lm_path = rel_to_abs_path(params.lm_path)
         logging.info(f"LM: {lm_path}")
         lm_params = load_config(lm_conf)
         lm = LM(lm_params, phase="test")
@@ -205,6 +216,7 @@ def main(args):
                 eos_id=params.eos_id,
                 num_samples=args.runtime_num_samples,
                 sample_utt_id=args.utt_id,
+                nbest=args.nbest,
             )
             runtime = time.time() - start_time
             runtime /= args.runtime_num_samples
@@ -218,6 +230,8 @@ def main(args):
         results_dir = get_results_dir(args.conf)
         os.makedirs(results_dir, exist_ok=True)
         result_file = f"result_{data_tag}_beam{beam_width}_len{len_weight}_ctc{decode_ctc_weight}_lm{lm_weight}{lm_tag}_ep{args.ep}.tsv"
+        if args.nbest:
+            result_file = result_file.replace(".tsv", "_nbest.tsv")
         result_path = os.path.join(results_dir, result_file)
         logging.info(f"result: {result_path}")
         if os.path.exists(result_path):
@@ -234,18 +248,29 @@ def main(args):
         lm_weight,
         device,
         sample_utt_id=args.utt_id,
+        nbest=args.nbest,
     )
 
     if args.utt_id is None:
-        data = pd.DataFrame(results, columns=["utt_id", "token_id", "text", "reftext"])
+        if args.nbest:
+            data = pd.DataFrame(
+                results, columns=["utt_id", "score_asr", "token_id", "text", "reftext"]
+            )
+        else:
+            data = pd.DataFrame(
+                results, columns=["utt_id", "token_id", "text", "reftext"]
+            )
         data.to_csv(result_path, sep="\t", index=False)
 
-        wer, wer_dict = compute_wers_df(data)
-        wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
-        logging.info(wer_info)
-        insert_comment(result_path, wer_info)
+        if not args.nbest:
+            wer, wer_dict = compute_wers_df(data)
+            wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
+            logging.info(wer_info)
+            insert_comment(result_path, wer_info)
 
-        return wer, wer_info
+            return wer, wer_info
+
+        # TODO: calculate oracle when args.nbest
 
 
 if __name__ == "__main__":
@@ -253,6 +278,7 @@ if __name__ == "__main__":
     parser.add_argument("-conf", type=str, required=True)
     parser.add_argument("-ep", type=str, required=True)
     parser.add_argument("--cpu", action="store_true")
+    parser.add_argument("--nbest", action="store_true")
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--data_tag", type=str, default="test")
     parser.add_argument("--debug", action="store_true")

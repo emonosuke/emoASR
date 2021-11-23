@@ -189,8 +189,6 @@ class CTCDecoder(nn.Module):
         }
         beams = [beam]
 
-        results = []
-
         for t in range(elens[0]):
             new_beams = []
 

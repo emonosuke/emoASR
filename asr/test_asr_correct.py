@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 import sys
+import time
 
 import git
 import numpy as np
@@ -91,6 +92,9 @@ def test_step(
     hyps, scores, logits, aligns = model.decode(xs, xlens, beam_width=0, len_weight=0)
     hyp = np.array(hyps[0])
 
+    if len(hyp) < 1:
+        return utt_id, [], [], reftext, 0, 0
+
     # ASR (phone)
     if vocab_phone is not None:
         hyps_phone, _, _, _ = model.decode(
@@ -98,8 +102,8 @@ def test_step(
         )
         hyp_phone = np.array(hyps_phone[0])
 
-    if len(hyps[0]) < 1:
-        return utt_id, [], [], reftext
+        if len(hyp_phone) < 1:
+            return utt_id, [], [], reftext, 0, 0
 
     hyp_masked = hyp.copy()
     token_probs, token_probs_v = aggregate_logits(logits[0], aligns[0], blank_id)
@@ -165,12 +169,16 @@ def test(
     mask_th,
     vocab_phone=None,
     debug=False,
+    num_samples=-1,
 ):
     rows = []  # utt_id, token_id, text, reftext
 
     num_masked_all, num_tokens_all = 0, 0
 
     for i, data in enumerate(dataloader):
+        if num_samples > 0 and (i + 1) > num_samples:
+            return rows
+
         utt_id, hyp, hyp_cor, reftext, num_masked, num_tokens = test_step(
             model,
             lm,
@@ -280,13 +288,32 @@ def main(args):
     else:
         vocab_phone = None
 
-    results_dir = get_results_dir(args.conf)
-    os.makedirs(results_dir, exist_ok=True)
-    result_file = f"result_{data_tag}_{lm_tag}_corr{args.lm_weight}_maskth{args.mask_th}_ep{args.ep}.tsv"
-    result_path = os.path.join(results_dir, result_file)
-    logging.info(f"result: {result_path}")
-    if os.path.exists(result_path):
-        logging.warning(f"result already exists! (will be overwritten)")
+    if args.runtime:
+        torch.set_num_threads(1)
+
+        runtimes = []
+        for j in range(args.runtime_num_repeats):
+            start_time = time.time()
+            test(
+                model,
+                lm,
+                dataloader,
+                vocab,
+                params.vocab_size,
+                device,
+                params.blank_id,
+                lm_params.mask_id,
+                mask_th=args.mask_th,
+                vocab_phone=vocab_phone,
+                num_samples=args.runtime_num_samples,
+            )
+            runtime = time.time() - start_time
+            runtime /= args.runtime_num_samples
+            logging.info(f"Run {(j+1):d} runtime: {runtime:.5f}sec / utt")
+            runtimes.append(runtime)
+
+        logging.info(f"Averaged runtime {np.mean(runtimes):.5f}sec on {device.type}")
+        return
 
     results = test(
         model,
@@ -301,6 +328,14 @@ def main(args):
         vocab_phone=vocab_phone,
         debug=args.debug,
     )
+
+    results_dir = get_results_dir(args.conf)
+    os.makedirs(results_dir, exist_ok=True)
+    result_file = f"result_{data_tag}_{lm_tag}_corr{args.lm_weight}_maskth{args.mask_th}_ep{args.ep}.tsv"
+    result_path = os.path.join(results_dir, result_file)
+    logging.info(f"result: {result_path}")
+    if os.path.exists(result_path):
+        logging.warning(f"result already exists! (will be overwritten)")
 
     data = pd.DataFrame(results, columns=["utt_id", "token_id", "text", "reftext"])
     data.to_csv(result_path, sep="\t", index=False)
@@ -326,6 +361,9 @@ if __name__ == "__main__":
     parser.add_argument("--data_tag", type=str, default="test")
     parser.add_argument("--lm_tag", type=str, default=None)
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--runtime", action="store_true")  # measure runtime mode
+    parser.add_argument("--runtime_num_samples", type=int, default=20)
+    parser.add_argument("--runtime_num_repeats", type=int, default=5)
     args = parser.parse_args()
 
     try:
