@@ -42,6 +42,12 @@ class LM(nn.Module):
     def forward(self, ys, ylens=None, labels=None, ps=None, plens=None):
         return self.lm(ys, ylens, labels, ps, plens)
 
+    def predict(self, ys, ylens, states=None):
+        return self.lm.predict(ys, ylens, states)
+
+    def score(self, ys, ylens):
+        return self.lm.score(ys, ylens)
+
     def load_state_dict(self, state_dict):
         try:
             super().load_state_dict(state_dict)

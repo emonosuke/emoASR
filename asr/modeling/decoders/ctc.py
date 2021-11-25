@@ -11,6 +11,7 @@ from itertools import groupby
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_sequence
 
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../")
 sys.path.append(EMOASR_ROOT)
@@ -200,7 +201,17 @@ class CTCDecoder(nn.Module):
                 sorted=True,
             )
 
-            for beam in beams:
+            # batchify
+            hyps_batch = pad_sequence(
+                [torch.tensor(beam["hyp"], device=eouts.device) for beam in beams],
+                batch_first=True,
+            )
+            hyp_lens_batch = torch.tensor(
+                [len(beam["hyp"]) for beam in beams], device=eouts.device
+            )
+            lm_log_prob_batch, _ = lm.predict(hyps_batch, hyp_lens_batch, states=None)
+
+            for b, beam in enumerate(beams):
                 hyp = beam["hyp"]
                 p_b = beam["p_b"]  # end with blank
                 p_nb = beam["p_nb"]  # end with non-blank
@@ -231,11 +242,6 @@ class CTCDecoder(nn.Module):
                     }
                 )
 
-                # NOTE: update LM
-                if lm_weight > 0:
-                    hyp_tensor = torch.tensor([hyp], device=eouts.device)
-                    lm_log_probs, _ = lm.predict(hyp_tensor, state=None)
-
                 # case 2. hyp is extended
                 new_p_b = LOG_0
                 for v in tensor2np(v_topk[0]):
@@ -251,7 +257,7 @@ class CTCDecoder(nn.Module):
                     score_asr = np.logaddexp(new_p_b, new_p_nb)
                     score_len = len_weight * (len(strip_eos(hyp, self.eos_id)) + 1)
                     if lm_weight > 0:
-                        score_lm += lm_weight * lm_log_probs[v].item()
+                        score_lm += lm_weight * lm_log_prob_batch[b, v].item()
 
                     new_beams.append(
                         {
