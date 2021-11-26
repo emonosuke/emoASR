@@ -50,24 +50,44 @@ class TransformerLM(nn.Module):
 
         return loss, loss_dict
 
-    def predict(self, ys, ylens, state=None):
+    def predict(self, ys, ylens, states=None):
         """ predict next token for Shallow Fusion
         """
+        attention_mask = make_nopad_mask(ylens).float().to(ys.device)
+
         with torch.no_grad():
-            (logits,) = self.transformer(ys, attention_mask=None, causal=True)
+            (logits,) = self.transformer(ys, attention_mask, causal=True)
 
         log_probs = torch.log_softmax(logits, dim=-1)
 
         log_probs_next = []
-        for log_prob, ylen in zip(log_probs, ylens):
-            log_probs_next.append(tensor2np(log_prob[ylen - 1]))
+        bs = len(ys)
+        for b in range(bs):
+            log_probs_next.append(tensor2np(log_probs[b, ylens[b] - 1]))
 
-        return torch.tensor(log_probs_next, device=ys.device), state
+        return torch.tensor(log_probs_next, device=ys.device), states
 
     def score(self, ys, ylens):
         """ score token sequence for Rescoring
         """
-        pass
+        attention_mask = make_nopad_mask(ylens).float().to(ys.device)
+
+        with torch.no_grad():
+            (logits,) = self.transformer(ys, attention_mask, causal=True)
+
+        log_probs = torch.log_softmax(logits, dim=-1)
+
+        score_lms = []
+        bs = len(ys)
+        for b in range(bs):
+            score_lm = 0
+
+            for i in range(0, ylens[b] - 1):
+                v = ys[b, i + 1].item()  # predict next
+                score_lm += log_probs[b, i, v].item()
+            score_lms.append(score_lm)
+
+        return score_lms
 
     def load_state_dict(self, state_dict):
         try:

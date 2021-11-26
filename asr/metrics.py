@@ -132,19 +132,36 @@ def compute_wers(hyps: list, refs: list, vocab=None):
     return wer, wer_dict
 
 
-def compute_wers_df(data):
+def compute_wers_df(dfhyp, dfref=None):
     n_sub_total, n_ins_total, n_del_total, n_ref_total = 0, 0, 0, 0
 
-    for row in data.itertuples():
-        hyp = row.text.split() if not pd.isna(row.text) else []
-        ref = row.reftext.split()
+    if dfref is None:
+        for row in dfhyp.itertuples():
+            hyp = row.text.split() if not pd.isna(row.text) else []
+            ref = row.reftext.split()
 
-        _, wer_dict = compute_wer(hyp, ref)
+            _, wer_dict = compute_wer(hyp, ref)
 
-        n_sub_total += wer_dict["n_sub"]
-        n_ins_total += wer_dict["n_ins"]
-        n_del_total += wer_dict["n_del"]
-        n_ref_total += wer_dict["n_ref"]
+            n_sub_total += wer_dict["n_sub"]
+            n_ins_total += wer_dict["n_ins"]
+            n_del_total += wer_dict["n_del"]
+            n_ref_total += wer_dict["n_ref"]
+    else:
+        id2hyp = {}
+
+        for row in dfhyp.itertuples():
+            id2hyp[row.utt_id] = row.text.split()
+
+        for row in dfref.itertuples():
+            hyp = id2hyp[row.utt_id] if row.utt_id in id2hyp else []
+            ref = row.text.split()
+
+            _, wer_dict = compute_wer(hyp, ref)
+
+            n_sub_total += wer_dict["n_sub"]
+            n_ins_total += wer_dict["n_ins"]
+            n_del_total += wer_dict["n_del"]
+            n_ref_total += wer_dict["n_ref"]
 
     wer = ((n_sub_total + n_ins_total + n_del_total) / n_ref_total) * 100
     wer_dict = {
