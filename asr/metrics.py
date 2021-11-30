@@ -105,7 +105,7 @@ def compute_wer(hyp, ref, cer=False):
     return wer, wer_dict
 
 
-def compute_wers(hyps: list, refs: list, vocab=None):
+def compute_wers(hyps: list, refs: list, vocab=None, cer=False):
     n_sub_total, n_ins_total, n_del_total, n_ref_total = 0, 0, 0, 0
 
     for hyp, ref in zip(hyps, refs):
@@ -113,7 +113,7 @@ def compute_wers(hyps: list, refs: list, vocab=None):
             hyp = vocab.ids2words(hyp)
             ref = vocab.ids2words(ref)
 
-        _, wer_dict = compute_wer(hyp, ref)
+        _, wer_dict = compute_wer(hyp, ref, cer=cer)
 
         n_sub_total += wer_dict["n_sub"]
         n_ins_total += wer_dict["n_ins"]
@@ -132,7 +132,7 @@ def compute_wers(hyps: list, refs: list, vocab=None):
     return wer, wer_dict
 
 
-def compute_wers_df(dfhyp, dfref=None):
+def compute_wers_df(dfhyp, dfref=None, cer=False):
     n_sub_total, n_ins_total, n_del_total, n_ref_total = 0, 0, 0, 0
 
     if dfref is None:
@@ -140,7 +140,7 @@ def compute_wers_df(dfhyp, dfref=None):
             hyp = row.text.split() if not pd.isna(row.text) else []
             ref = row.reftext.split()
 
-            _, wer_dict = compute_wer(hyp, ref)
+            _, wer_dict = compute_wer(hyp, ref, cer=cer)
 
             n_sub_total += wer_dict["n_sub"]
             n_ins_total += wer_dict["n_ins"]
@@ -156,7 +156,7 @@ def compute_wers_df(dfhyp, dfref=None):
             hyp = id2hyp[row.utt_id] if row.utt_id in id2hyp else []
             ref = row.text.split()
 
-            _, wer_dict = compute_wer(hyp, ref)
+            _, wer_dict = compute_wer(hyp, ref, cer=cer)
 
             n_sub_total += wer_dict["n_sub"]
             n_ins_total += wer_dict["n_ins"]
@@ -178,10 +178,14 @@ def compute_wers_df(dfhyp, dfref=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("tsv_path", type=str)
+    parser.add_argument("--cer", action="store_true")
     args = parser.parse_args()
 
     data = pd.read_table(args.tsv_path, comment="#")
-    wer, wer_dict = compute_wers_df(data)
-    wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
+    wer, wer_dict = compute_wers_df(data, cer=args.cer)
+    if args.cer:
+        wer_info = f"CER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
+    else:
+        wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
     print(wer_info)
     insert_comment(args.tsv_path, wer_info)

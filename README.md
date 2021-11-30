@@ -29,12 +29,12 @@
 | `T4` | Transducer(Trf.) 1kBPE | 9.5 | 10.5 |
 | `T5` | Transducer(Cf.) 1kBPE |  |  |
 
-### CSJ[WER]
+### CSJ[WER/CER]
 
 |  |  | eval1 | eval2 | eval3 |
 |:---:|:---|:---:|:---:|:---:|
-| `C1` | CTC(Trf.) | 8.4 | 6.4 | 7.0 |
-| `C2` | Trf.(Trf.) | 6.7 | 4.9 | 5.5 |
+| `C1` | CTC(Trf.) | 8.4/6.4 | 6.4/5.0 | 7.0/5.1 |
+| `C2` | Trf.(Trf.) | 6.7/5.0 | 4.9/3.6 | 5.5/4.0 |
 | `C3` | Trf.(Cf.) |  |
 
 ## Reference
