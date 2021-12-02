@@ -4,7 +4,7 @@
 
 ## Results
 
-### Librispeech
+### Librispeech[WER]
 
 | |  | params | clean | other |
 |:---:|:---|:---:|:---:|:---:|
@@ -16,7 +16,7 @@
 | `L3-3` | +CTC+SF |  |  |
 | `L4` | Transducer(Cf.) 1kBPE | 26M |  |  |
 
-### TED-LIUM2
+### TED-LIUM2[WER]
 
 |  |  | test | dev |
 |:---:|:---|:---:|:---:|

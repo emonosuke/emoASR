@@ -42,7 +42,13 @@ def test_step(
     reftext = data["texts"][0]
 
     hyps, scores, _, _ = model.decode(
-        xs, xlens, beam_width, len_weight, decode_ctc_weight, lm=lm, lm_weight=lm_weight
+        xs,
+        xlens,
+        beam_width,
+        len_weight,
+        lm=lm,
+        lm_weight=lm_weight,
+        decode_ctc_weight=decode_ctc_weight,
     )
     return utt_id, hyps, scores, reftext
 
@@ -88,10 +94,10 @@ def test(
                 token_id = ints2str(strip_eos(hyp, eos_id))
                 text = vocab.ids2text(strip_eos(hyp, eos_id))
                 rows.append([utt_id, score, token_id, text, reftext])
+
             # for debug
             text = vocab.ids2text(strip_eos(hyps[0], eos_id))
         else:
-            # FIXME: len(hyps[0]) < 1 ?
             if len(hyps) < 1:
                 token_id = None
                 text = ""
@@ -107,7 +113,7 @@ def test(
     return rows
 
 
-def main(args):
+def test_main(args, lm_weight=None, len_weight=None):
     if args.cpu:
         device = torch.device("cpu")
         torch.set_num_threads(1)
@@ -119,13 +125,18 @@ def main(args):
     params = load_config(args.conf)
 
     beam_width = args.beam_width if args.beam_width is not None else params.beam_width
-    len_weight = args.len_weight if args.len_weight is not None else params.len_weight
+
+    if len_weight is None:
+        len_weight = (
+            args.len_weight if args.len_weight is not None else params.len_weight
+        )
     decode_ctc_weight = (
         args.decode_ctc_weight
         if args.decode_ctc_weight is not None
         else params.decode_ctc_weight
     )
-    lm_weight = args.lm_weight if args.lm_weight is not None else params.lm_weight
+    if lm_weight is None:
+        lm_weight = args.lm_weight if args.lm_weight is not None else params.lm_weight
 
     if args.debug:
         logging.basicConfig(
@@ -163,10 +174,12 @@ def main(args):
             if args.lm_conf is not None
             else rel_to_abs_path(params.lm_conf)
         )
-        if args.lm_ep is not None:
-            lm_path = get_model_path(lm_conf, args.lm_ep)
-        else:
-            lm_path = rel_to_abs_path(params.lm_path)
+        lm_path = (
+            get_model_path(lm_conf, args.lm_ep)
+            if args.lm_ep is not None
+            else rel_to_abs_path(params.lm_path)
+        )
+
         logging.info(f"LM: {lm_path}")
         lm_params = load_config(lm_conf)
         lm = LM(lm_params, phase="test")
@@ -228,6 +241,8 @@ def main(args):
 
     if args.utt_id is None:
         results_dir = get_results_dir(args.conf)
+        if args.save_dir is not None:
+            results_dir = os.path.join(results_dir, args.save_dir)
         os.makedirs(results_dir, exist_ok=True)
         result_file = f"result_{data_tag}_beam{beam_width}_len{len_weight}_ctc{decode_ctc_weight}_lm{lm_weight}{lm_tag}_ep{args.ep}.tsv"
         if args.nbest:
@@ -273,6 +288,10 @@ def main(args):
         # TODO: calculate oracle when args.nbest
 
 
+def main(args):
+    test_main(args)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-conf", type=str, required=True)
@@ -281,6 +300,7 @@ if __name__ == "__main__":
     parser.add_argument("--nbest", action="store_true")
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--data_tag", type=str, default="test")
+    parser.add_argument("--save_dir", type=str, default=None)
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--utt_id", type=str, default=None)
     parser.add_argument("--runtime", action="store_true")  # measure runtime mode
@@ -294,10 +314,12 @@ if __name__ == "__main__":
     parser.add_argument("--lm_conf", type=str, default=None)
     parser.add_argument("--lm_ep", type=str, default=None)
     parser.add_argument("--lm_tag", type=str, default=None)
+    #
+    parser.add_argument("--decode_phone", action="store_true")
     args = parser.parse_args()
 
     try:
-        main(args)
+        test_main(args)
     except:
         logging.error("***** ERROR occurs in testing *****", exc_info=True)
         logging.error("**********")

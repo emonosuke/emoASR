@@ -82,6 +82,9 @@ class CTCDecoder(nn.Module):
 
         logits = self.output(eouts)  # (B, T, vocab_size)
 
+        if ys is None:
+            return logits
+
         # NOTE: nn.CTCLoss accepts (T, B, vocab_size) logits
         loss_ctc = self.ctc_loss(
             logits.transpose(1, 0).log_softmax(dim=2), ys, elens, ylens
@@ -201,15 +204,18 @@ class CTCDecoder(nn.Module):
                 sorted=True,
             )
 
-            # batchify
-            hyps_batch = pad_sequence(
-                [torch.tensor(beam["hyp"], device=eouts.device) for beam in beams],
-                batch_first=True,
-            )
-            hyp_lens_batch = torch.tensor(
-                [len(beam["hyp"]) for beam in beams], device=eouts.device
-            )
-            lm_log_prob_batch, _ = lm.predict(hyps_batch, hyp_lens_batch, states=None)
+            if lm_weight > 0:
+                # batchify
+                hyps_batch = pad_sequence(
+                    [torch.tensor(beam["hyp"], device=eouts.device) for beam in beams],
+                    batch_first=True,
+                )
+                hyp_lens_batch = torch.tensor(
+                    [len(beam["hyp"]) for beam in beams], device=eouts.device
+                )
+                lm_log_prob_batch, _ = lm.predict(
+                    hyps_batch, hyp_lens_batch, states=None
+                )
 
             for b, beam in enumerate(beams):
                 hyp = beam["hyp"]
@@ -290,9 +296,9 @@ class CTCDecoder(nn.Module):
         eouts_inter,
         beam_width=1,
         len_weight=0,
-        decode_ctc_weight=0,
         lm=None,
         lm_weight=0,
+        decode_ctc_weight=0,
         decode_phone=False,
     ):
         if decode_phone and self.hie_mtl_phone:

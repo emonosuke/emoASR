@@ -1,4 +1,5 @@
 import torch
+from torch.nn.utils.rnn import pad_sequence
 
 
 def str2ints(s):
@@ -29,20 +30,14 @@ def strip_eos(tokens, eos_id):
     return [token for token in tokens if token != eos_id]
 
 
-def get_ys_in_out(ys, ylens, eos_id, add_sos_eos=False):
-    if add_sos_eos:
-        eos = torch.tensor([eos_id], dtype=ys.dtype, device=ys.device)
-
-        ys_in_list = [torch.cat((eos, y)) for y, ylen in zip(ys, ylens)]
-        ys_out_list = [torch.cat((y, eos)) for y, ylen in zip(ys, ylens)]
-    else:
-        ys_in_list = [y[0 : (ylen - 1)] for y, ylen in zip(ys, ylens)]
-        ys_out_list = [y[1:ylen] for y, ylen in zip(ys, ylens)]
-
-    ys_in = pad_sequence(ys_in_list, batch_first=True, padding_value=eos_id)
-    ys_out = pad_sequence(ys_out_list, batch_first=True, padding_value=eos_id)
-
-    return ys_in, ys_out
+def add_sos_eos(ys, ylens, eos_id):
+    ys_eos_list = [
+        torch.tensor([eos_id] + y[:ylen].tolist() + [eos_id], device=ys.device)
+        for y, ylen in zip(ys, ylens)
+    ]
+    ys_eos = pad_sequence(ys_eos_list, batch_first=True, padding_value=eos_id)
+    ylens_eos = ylens + 2
+    return ys_eos, ylens_eos
 
 
 def tensor2np(x):

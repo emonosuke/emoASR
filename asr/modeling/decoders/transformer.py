@@ -13,10 +13,13 @@ sys.path.append(EMOASR_ROOT)
 
 from asr.criteria import DistillLoss, LabelSmoothingLoss
 from asr.modeling.decoders.ctc import CTCDecoder
+from asr.modeling.decoders.ctc_score import CTCPrefixScorer
 from asr.modeling.model_utils import make_src_mask, make_tgt_mask
 from asr.modeling.transformer import PositionalEncoder, TransformerDecoderLayer
 from lm.criteria import MaskedLMLoss
-from utils.converters import strip_eos
+from utils.converters import add_sos_eos, np2tensor, strip_eos, tensor2np
+
+CTC_BEAM_WIDTH_RATIO = 1.5
 
 
 class TransformerDecoder(nn.Module):
@@ -44,6 +47,8 @@ class TransformerDecoder(nn.Module):
         self.mtl_ctc_weight = params.mtl_ctc_weight
         if self.mtl_ctc_weight > 0:
             self.ctc = CTCDecoder(params)
+        if hasattr(params, "mtl_ctc_add_sos_eos"):
+            self.mtl_ctc_add_sos_eos = params.mtl_ctc_add_sos_eos
 
         # normalize before
         # TODO: set `eps` to 1e-5 (default)
@@ -72,6 +77,7 @@ class TransformerDecoder(nn.Module):
                 normalize_batch=params.loss_normalize_batch,
             )
 
+        self.blank_id = params.blank_id
         self.eos_id = params.eos_id
         self.max_decode_ylen = params.max_decode_ylen
 
@@ -130,6 +136,9 @@ class TransformerDecoder(nn.Module):
             loss_dict["loss_att"] = loss_att
 
         if self.mtl_ctc_weight > 0:
+            if self.mtl_ctc_add_sos_eos:
+                ys, ylens = add_sos_eos(ys, ylens, eos_id=self.eos_id)
+
             # NOTE: KD is not applied to auxiliary CTC
             loss_ctc, _, _ = self.ctc(
                 eouts=eouts, elens=elens, ys=ys, ylens=ylens, soft_labels=None
@@ -161,9 +170,9 @@ class TransformerDecoder(nn.Module):
         eouts_inter=None,
         beam_width=1,
         len_weight=0,
-        decode_ctc_weight=0,
         lm=None,
         lm_weight=0,
+        decode_ctc_weight=0,
         decode_phone=False,
     ):
         """ Beam search decoding
@@ -177,7 +186,28 @@ class TransformerDecoder(nn.Module):
         assert bs == 1
 
         # init
-        beam = {"hyp": [self.eos_id], "score": 0.0, "lm_state": None}
+        beam = {
+            "hyp": [self.eos_id],
+            "score": 0.0,
+            "score_ctc": 0.0,
+            "ctc_state": None,
+            "score_lm": 0.0,
+            "lm_state": None,
+        }
+        if decode_ctc_weight > 0:
+            ctc_logits = self.ctc(eouts, elens)
+            ctc_log_probs = torch.log_softmax(ctc_logits, dim=-1)
+
+            ctc_scorer = CTCPrefixScorer(
+                tensor2np(ctc_log_probs.squeeze(0)),
+                blank_id=self.blank_id,
+                eos_id=self.eos_id,
+            )
+            beam["score_ctc"] = 0.0
+            beam["ctc_state"] = ctc_scorer.initial_state()
+            ctc_beam_width = min(
+                ctc_log_probs.size(2), int(beam_width * CTC_BEAM_WIDTH_RATIO)
+            )
         beams = [beam]
 
         results = []
@@ -189,21 +219,38 @@ class TransformerDecoder(nn.Module):
                 ys_in = torch.tensor([beam["hyp"]]).to(eouts.device)
                 ylens_in = torch.tensor([i + 1]).to(eouts.device)
 
-                scores_asr = torch.log_softmax(
+                scores_att = torch.log_softmax(
                     self.forward_one_step(ys_in, ylens_in, eouts), dim=-1
                 )  # (1, vocab)
-                scores = scores_asr
+                scores = scores_att
 
                 if lm_weight > 0:
                     scores_lm, _ = lm.predict(ys_in, state=None)
                     scores += lm_weight * scores_lm[: self.vocab_size]
 
-                scores_topk, v_topk = torch.topk(scores, k=beam_width, dim=1)
+                if decode_ctc_weight > 0:
+                    score_ctc_prev = beam["score_ctc"]
+                    ctc_state_prev = beam["ctc_state"]
+                    scores_topb, v_topb = torch.topk(scores, k=ctc_beam_width, dim=1)
+                    scores_ctc, ctc_state = ctc_scorer(ys_in, v_topb[0], ctc_state_prev)
+                    # re-calculate score
+                    scores = (1 - decode_ctc_weight) * scores_att[
+                        :, v_topb[0]
+                    ] + decode_ctc_weight * np2tensor(scores_ctc - score_ctc_prev)
+                    if lm_weight > 0:
+                        scores += lm_weight * scores_lm[:, v_topb]
+                    scores_topk, ids_topk = torch.topk(scores, k=beam_width, dim=1)
+                    v_topk = v_topb[:, ids_topk[0]]
+                else:
+                    scores_topk, v_topk = torch.topk(scores, k=beam_width, dim=1)
 
                 for j in range(beam_width):
                     new_beam = {}
                     new_beam["score"] = beam["score"] + float(scores_topk[0, j])
                     new_beam["hyp"] = beam["hyp"] + [int(v_topk[0, j])]
+                    if decode_ctc_weight > 0:
+                        new_beam["score_ctc"] = scores_ctc[ids_topk[0, j]]
+                        new_beam["ctc_state"] = ctc_state[ids_topk[0, j]]
                     new_beams.append(new_beam)
 
             # update `beams`

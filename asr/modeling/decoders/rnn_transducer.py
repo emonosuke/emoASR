@@ -4,8 +4,6 @@ Reference:
     https://github.com/hirofumi0810/neural_sp/blob/master/neural_sp/models/seq2seq/decoders/rnn_transducer.py
 """
 
-# TODO: beam search
-
 import logging
 import os
 import sys
@@ -239,6 +237,11 @@ class RNNTDecoder(nn.Module):
 
         return hyps, scores, logits, aligns
 
+    def _beam_search(self):
+        """ Beam search decoding
+        """
+        pass
+
     def decode(
         self,
         eouts,
@@ -246,6 +249,8 @@ class RNNTDecoder(nn.Module):
         eouts_inter=None,
         beam_width=1,
         len_weight=0,
+        lm=None,
+        lm_weight=0,
         decode_ctc_weight=0,
         decode_phone=False,
     ):
