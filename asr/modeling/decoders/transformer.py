@@ -232,7 +232,9 @@ class TransformerDecoder(nn.Module):
                     score_ctc_prev = beam["score_ctc"]
                     ctc_state_prev = beam["ctc_state"]
                     scores_topb, v_topb = torch.topk(scores, k=ctc_beam_width, dim=1)
-                    scores_ctc, ctc_state = ctc_scorer(ys_in, v_topb[0], ctc_state_prev)
+                    scores_ctc, ctc_state = ctc_scorer(
+                        beam["hyp"], v_topb[0], ctc_state_prev
+                    )
                     # re-calculate score
                     scores = (1 - decode_ctc_weight) * scores_att[
                         :, v_topb[0]
