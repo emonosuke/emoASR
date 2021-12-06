@@ -225,8 +225,10 @@ class TransformerDecoder(nn.Module):
                 scores = scores_att
 
                 if lm_weight > 0:
-                    scores_lm, _ = lm.predict(ys_in, state=None)
-                    scores += lm_weight * scores_lm[: self.vocab_size]
+                    scores_lm, _ = lm.predict(
+                        ys_in, ylens_in, states=None
+                    )  # (1, vocab)
+                    scores += lm_weight * scores_lm[:, : self.vocab_size]
 
                 if decode_ctc_weight > 0:
                     score_ctc_prev = beam["score_ctc"]
@@ -240,7 +242,7 @@ class TransformerDecoder(nn.Module):
                         :, v_topb[0]
                     ] + decode_ctc_weight * np2tensor(scores_ctc - score_ctc_prev)
                     if lm_weight > 0:
-                        scores += lm_weight * scores_lm[:, v_topb]
+                        scores += lm_weight * scores_lm[:, v_topb[0]]
                     scores_topk, ids_topk = torch.topk(scores, k=beam_width, dim=1)
                     v_topk = v_topb[:, ids_topk[0]]
                 else:

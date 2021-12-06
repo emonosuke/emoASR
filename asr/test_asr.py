@@ -114,6 +114,8 @@ def test(
 
 
 def test_main(args, lm_weight=None, len_weight=None):
+    if lm_weight is not None and len_weight is not None:
+        logging.info(f"*** lm_weight: {lm_weight:.2f} len_weight {len_weight:.2f}")
     if args.cpu:
         device = torch.device("cpu")
         torch.set_num_threads(1)
@@ -206,7 +208,7 @@ def test_main(args, lm_weight=None, len_weight=None):
         batch_size=1,
         shuffle=False,
         collate_fn=dataset.collate_fn,
-        num_workers=1,
+        num_workers=0,
     )
     vocab = Vocab(rel_to_abs_path(params.vocab_path))
 
@@ -244,7 +246,7 @@ def test_main(args, lm_weight=None, len_weight=None):
         if args.save_dir is not None:
             results_dir = os.path.join(results_dir, args.save_dir)
         os.makedirs(results_dir, exist_ok=True)
-        result_file = f"result_{data_tag}_beam{beam_width}_len{len_weight}_ctc{decode_ctc_weight}_lm{lm_weight}{lm_tag}_ep{args.ep}.tsv"
+        result_file = f"result_{data_tag}_beam{beam_width:d}_len{len_weight:.1f}_ctc{decode_ctc_weight:.1f}_lm{lm_weight:.2f}{lm_tag}_ep{args.ep}.tsv"
         if args.nbest:
             result_file = result_file.replace(".tsv", "_nbest.tsv")
         result_path = os.path.join(results_dir, result_file)
@@ -283,7 +285,7 @@ def test_main(args, lm_weight=None, len_weight=None):
             logging.info(wer_info)
             insert_comment(result_path, wer_info)
 
-            return wer, wer_info
+            return lm_weight, len_weight, wer, wer_info
 
         # TODO: calculate oracle when args.nbest
 
@@ -314,7 +316,7 @@ if __name__ == "__main__":
     parser.add_argument("--lm_conf", type=str, default=None)
     parser.add_argument("--lm_ep", type=str, default=None)
     parser.add_argument("--lm_tag", type=str, default=None)
-    #
+    # TODO
     parser.add_argument("--decode_phone", action="store_true")
     args = parser.parse_args()
 
