@@ -28,7 +28,7 @@ def main(args):
             end_time_str = str(int(end_time * 100)).zfill(7)
             utt_id = f"{utt_prefix}-{start_time_str}-{end_time_str}"
 
-            out_wav_dir = os.path.join(args.wav_dir, utt_prefix)
+            out_wav_dir = os.path.join(args.out_wav_dir, utt_prefix)
             os.makedirs(out_wav_dir, exist_ok=True)
             out_wav_path = os.path.join(out_wav_dir, f"{utt_id}.wav")
 
@@ -45,6 +45,8 @@ def main(args):
             )
             assert cp.returncode == 0
 
+            # print(f"{wav_path} -> {out_wav_path}")
+
             rows.append((utt_id, out_wav_path, text))
 
     data = pd.DataFrame(rows, columns=["utt_id", "wav_path", "text"])
@@ -55,6 +57,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("stm_dir", type=str)
     parser.add_argument("wav_dir", type=str)
+    parser.add_argument("out_wav_dir", type=str)
     parser.add_argument("tsv_path", type=str)
     args = parser.parse_args()
 

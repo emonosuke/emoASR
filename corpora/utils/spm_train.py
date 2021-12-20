@@ -13,19 +13,17 @@ def build_vocab(
     with open(spm_vocab_path) as f:
         for i, line in enumerate(f):
             token = line.split()[0]
-            print(token)
             outs.append(f"{token} {(i+len(special_tokens)):d}\n")
     with open(vocab_path, "w") as f:
         f.writelines(outs)
 
 
 def main(args):
-    if not os.path.exists(args.model):
-        spm.SentencePieceTrainer.train(
-            input=args.data,
-            model_prefix=args.model.replace(".model", ""),
-            vocab_size=args.vocab_size,
-        )
+    spm.SentencePieceTrainer.train(
+        input=args.data,
+        model_prefix=args.model.replace(".model", ""),
+        vocab_size=args.vocab_size,
+    )
     build_vocab(args.model.replace(".model", ".vocab"), args.vocab)
 
 

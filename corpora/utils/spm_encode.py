@@ -17,6 +17,7 @@ from utils.vocab import Vocab
 
 def main(args):
     df = pd.read_table(args.data)
+    df = df.dropna()
 
     sp = spm.SentencePieceProcessor()
     sp.Load(args.model)

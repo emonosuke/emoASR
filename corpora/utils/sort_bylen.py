@@ -1,12 +1,19 @@
 import argparse
 import os
 
+import numpy as np
 import pandas as pd
+
+
+def get_xlen(npy_path):
+    x = np.load(npy_path)
+    return len(x)
 
 
 def sort_data(data, task):
     if task == "ASR":
-        # TODO: get xlen if does not exist
+        if "xlen" not in data:
+            data["xlen"] = data["feat_path"].map(get_xlen)
         data_sorted = data.sort_values(["xlen"])
 
     elif task == "P2W":
