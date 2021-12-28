@@ -8,6 +8,7 @@ import logging
 import os
 import sys
 
+import numpy as np
 import torch
 import torch.nn as nn
 import warp_rnnt
@@ -17,6 +18,7 @@ sys.path.append(EMOASR_ROOT)
 
 from asr.criteria import RNNTAlignDistillLoss, RNNTWordDistillLoss
 from asr.modeling.decoders.ctc import CTCDecoder
+from utils.converters import ints2str
 
 
 class RNNTDecoder(nn.Module):
@@ -71,7 +73,8 @@ class RNNTDecoder(nn.Module):
                 self.transducer_kd_loss = RNNTAlignDistillLoss()
 
                 # cuda init only if forced aligner is used
-                from asr.modeling.decoders.rnnt_aligner import RNNTForcedAligner
+                from asr.modeling.decoders.rnnt_aligner import \
+                    RNNTForcedAligner
 
                 self.forced_aligner = RNNTForcedAligner(blank_id=self.blank_id)
 
@@ -192,7 +195,6 @@ class RNNTDecoder(nn.Module):
         """ Greedy decoding
         """
         if decode_ctc_weight == 1:
-            print("CTC is used")
             # greedy
             return self.ctc.decode(eouts, elens, beam_width=1)
 
@@ -237,10 +239,90 @@ class RNNTDecoder(nn.Module):
 
         return hyps, scores, logits, aligns
 
-    def _beam_search(self):
+    def _beam_search(self, eouts, elens, beam_width=1, len_weight=0, lm=None, lm_weight=0):
         """ Beam search decoding
+
+        Reference:
+            ALIGNMENT-LENGTH SYNCHRONOUS DECODING FOR RNN TRANSDUCER
+            https://ieeexplore.ieee.org/document/9053040
         """
-        pass
+        bs = eouts.size(0)
+        assert bs == 1
+        NUM_EXPANDS = 3
+
+        # init
+        beam = {
+            "hyp": [self.eos_id],   # <sos>
+            "score": 0.0,
+            "score_asr": 0.0,
+            "dstate": {"hs": torch.zeros(self.dec_num_layers, bs, self.dec_hidden_size, device=eouts.device),
+                       "cs": torch.zeros(self.dec_num_layers, bs, self.dec_hidden_size, device=eouts.device)}
+        }
+        beams = [beam]
+        
+        # time synchronous decoding
+        for t in range(eouts.size(1)):
+            new_beams = []  # A
+            beams_v = beams[:]  # C <- B
+
+            for v in range(NUM_EXPANDS):
+                new_beams_v = []  # D
+
+                # prediction network
+                ys = torch.zeros((len(beams_v), 1), dtype=torch.int64, device=eouts.device)
+                for i, beam in enumerate(beams_v):
+                    ys[i] = beam["hyp"][-1]
+                dstates_prev = {"hs": torch.cat([beam["dstate"]["hs"] for beam in beams_v], dim=1),
+                                "cs": torch.cat([beam["dstate"]["cs"] for beam in beams_v], dim=1)}
+                douts, dstates = self.recurrency(ys, dstates_prev)
+
+                # for i, beam in enumerate(beams_v):
+                #     beams_v[i]["dstate"] = {"hs": dstates["hs"][:, i:i + 1],
+                #                             "cs": dstates["cs"][:, i:i + 1]}
+                
+                # joint network
+                logits = self.joint(eouts[:, t:t + 1], douts)
+                scores_asr = torch.log_softmax(logits.squeeze(2).squeeze(1), dim=-1)
+
+                # blank expansion
+                for i, beam in enumerate(beams_v):
+                    blank_score = scores_asr[i, self.blank_id].item()
+                    new_beams.append(beam.copy())
+                    new_beams[-1]["score"] += blank_score
+                    new_beams[-1]["score_asr"] += blank_score
+                    # NOTE: do not update `dstate`
+
+                for i, beam in enumerate(beams_v):
+                    beams_v[i]["dstate"] = {"hs": dstates["hs"][:, i:i + 1],
+                                            "cs": dstates["cs"][:, i:i + 1]}
+
+                # non-blank expansion
+                if v < NUM_EXPANDS - 1:
+                    for i, beam in enumerate(beams_v):
+                        scores_topk, v_topk = torch.topk(scores_asr[i, 1:], k=beam_width, dim=-1, largest=True, sorted=True)
+                        v_topk += 1
+
+                        for k in range(beam_width):
+                            v_index = v_topk[k].item()
+                            new_beams_v.append({"hyp": beam["hyp"] + [v_index],
+                                                "score": beam["score"] + scores_topk[k].item(),
+                                                "score_asr": beam["score_asr"] + scores_topk[k].item(),
+                                                "dout": None,
+                                                "dstate": beam["dstate"]})
+
+                # Local pruning at each expansion
+                new_beams_v = sorted(new_beams_v, key=lambda x: x["score"], reverse=True)
+                new_beams_v = self._merge_rnnt_paths(new_beams_v)
+                beams_v = new_beams_v[:beam_width]  # C <- D
+            
+            # Local pruning at t-th index
+            new_beams = sorted(new_beams, key=lambda x: x["score"], reverse=True)
+            new_beams = self._merge_rnnt_paths(new_beams)
+            beams = new_beams[:beam_width]  # B <- A
+        
+        hyps = [beam["hyp"] for beam in beams]
+        
+        return hyps
 
     def decode(
         self,
@@ -255,4 +337,23 @@ class RNNTDecoder(nn.Module):
         decode_phone=False,
     ):
         if beam_width <= 1:
-            return self._greedy(eouts, elens, decode_ctc_weight)
+           hyps, scores, logits, aligns = self._greedy(eouts, elens, decode_ctc_weight)
+        else:
+            hyps = self._beam_search(
+                eouts, elens, beam_width, len_weight, lm, lm_weight
+            )
+        scores, logits, aligns = None, None, None
+        return hyps, scores, logits, aligns
+
+    @staticmethod
+    def _merge_rnnt_paths(beams):
+        merged_beams = {}
+
+        for beam in beams:
+            hyp = ints2str(beam["hyp"])
+            if hyp in merged_beams.keys():
+                merged_beams[hyp]["score"] = np.logaddexp(merged_beams[hyp]["score"], beam["score"])
+            else:
+                merged_beams[hyp] = beam
+
+        return list(merged_beams.values())
