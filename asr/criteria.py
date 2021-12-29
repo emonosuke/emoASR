@@ -176,19 +176,41 @@ class CTCAlignDistillLoss(nn.Module):
 
     def _frame_to_label_mapping(self, align, xlen, ylen):
         label_map = torch.full((xlen,), -1, dtype=torch.long)
+        
         label_id = -1
+        left_t, right_t = -1, -1
         for t in range(xlen):
             token_id = align[t]
             if token_id == self.blank_id:
                 continue  # label_map[t] = -1
             if t == 0 or token_id != align[t - 1]:  # new token
+                if label_id >= 0:
+                    if self.position == "left":
+                        label_map[left_t] = label_id
+                    elif self.position == "mid":
+                        mid_t = (left_t + right_t) // 2
+                        label_map[mid_t] = label_id
+                    elif self.position == "right":
+                        label_map[right_t] = label_id
+                
+                # update `label_id` here
                 label_id += 1
-                if self.position == "left" or self.position == "all":
-                    label_map[t] = label_id  # >= 0
-            elif self.position == "all":
-                label_map[t] = label_id
+                left_t, right_t = t, t
 
-        assert (ylen - 1) == label_id
+            if self.position == "all":
+                label_map[t] = label_id
+            right_t = t
+        
+        if label_id >= 0:
+            if self.position == "left":
+                label_map[left_t] = label_id
+            elif self.position == "mid":
+                mid_t = (left_t + right_t) // 2
+                label_map[mid_t] = label_id
+            elif self.position == "right":
+                label_map[right_t] = label_id
+        
+        assert label_id == (ylen - 1)
 
         return label_map
 
@@ -264,3 +286,12 @@ class RNNTAlignDistillLoss(nn.Module):
             loss /= bs
 
         return loss
+
+if __name__ == "__main__":
+    # loss = CTCAlignDistillLoss(vocab_size=100, position="left")
+    # loss = CTCAlignDistillLoss(vocab_size=100, position="mid")
+    # loss = CTCAlignDistillLoss(vocab_size=100, position="right")
+    loss = CTCAlignDistillLoss(vocab_size=100, position="all")
+    align = [5, 0, 0, 15, 15, 15, 15, 10, 10, 0]
+    label_map = loss._frame_to_label_mapping(align, xlen=10, ylen=3)
+    print(label_map)
