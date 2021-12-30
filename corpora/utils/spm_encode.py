@@ -3,7 +3,6 @@ import os
 import sys
 
 import pandas as pd
-
 # https://github.com/google/sentencepiece
 import sentencepiece as spm
 from tqdm import tqdm

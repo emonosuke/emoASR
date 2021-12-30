@@ -3,15 +3,13 @@ import pickle
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 
-def save_feats(npy_path, mean, std):
-    out_npy_path = npy_path.replace(".npy", "_norm.npy")
+def save_feats(npy_path, mean, std, norm_suffix="norm"):
+    out_npy_path = npy_path.replace(".npy", f"_{args.norm_suffix}.npy")
     x = np.load(npy_path)
-    # print(x)
     x_norm = (x - mean) / std
-    # print(x_norm)
-    print(out_npy_path)
     np.save(out_npy_path, x_norm)
 
 
@@ -37,9 +35,9 @@ def main(args):
 
     if args.data_path.endswith(".tsv"):
         df = pd.read_table(args.data_path)
-        for row in df.itertuples():
+        for row in tqdm(df.itertuples()):
             npy_path = row.wav_path.replace(".wav", ".npy")
-            save_feats(npy_path, mean, std)
+            save_feats(npy_path, mean, std, norm_suffix=args.norm_suffix)
     elif args.data_path.endswith(".npy"):
         save_feats(args.data_path, mean, std)
 
@@ -48,5 +46,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("data_path", type=str)
     parser.add_argument("norm_path", type=str)
+    parser.add_argument("--norm_suffix", type=str, default="norm")
     args = parser.parse_args()
     main(args)

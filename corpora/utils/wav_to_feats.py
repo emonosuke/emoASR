@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torchaudio
+from tqdm import tqdm
 
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")
 sys.path.append(EMOASR_ROOT)
@@ -35,8 +36,6 @@ def save_feats(wav_path):
         npy_path = wav_path.replace(".wav", ".npy")
         np.save(npy_path, lmfb)
 
-        print(f"{wav_path} -> {npy_path}")
-
         lmfb_sum = np.sum(lmfb, axis=0)
         lmfb_sqsum = np.sum(lmfb * lmfb, axis=0)
         num_frames = lmfb.shape[0]
@@ -49,7 +48,7 @@ def main(args):
         lmfb_sum_all, lmfb_sqsum_all = [], []
         num_frames_all = 0
         data = pd.read_table(args.data_path)
-        for row in data.itertuples():
+        for row in tqdm(data.itertuples()):
             lmfb_sum, lmfb_sqsum, num_frames = save_feats(row.wav_path)
             lmfb_sum_all.extend(lmfb_sum)
             lmfb_sqsum_all.extend(lmfb_sqsum)

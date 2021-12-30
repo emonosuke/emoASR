@@ -22,7 +22,7 @@ def get_ylen(token_id):
 def main(args):
     df = pd.read_table(args.tsv_path)
     if "wav_path" in df:
-        df["wav_path"] = df["wav_path"].str.replace(".wav", "_norm.npy", regex=False)
+        df["wav_path"] = df["wav_path"].str.replace(".wav", f"_{args.norm_suffix}.npy", regex=False)
         df["wav_path"] = "/n/work1/futami/emoASR/corpora/" + df["wav_path"]
         df = df.rename(columns={"wav_path": "feat_path"})
     if "xlen" not in df:
@@ -36,5 +36,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("tsv_path", type=str)
+    parser.add_argument("--norm_suffix", type=str, default="norm")
     args = parser.parse_args()
     main(args)
