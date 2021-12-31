@@ -26,7 +26,7 @@ class ScheduledOptimizer:
         else:
             self.num_warmup_steps = params.num_warmup_steps
 
-        self._lr = 0 if self.num_warmup_steps > 0 else self.base_lr
+        self._lr = 0
 
         logging.info(f"lr scheduling type: {self.schedule_type}")
         if self.schedule_type == "epdecay":
@@ -51,7 +51,7 @@ class ScheduledOptimizer:
             if self._step <= self.num_warmup_steps:
                 new_lr = (self.base_lr / max(1.0, self.num_warmup_steps)) * self._step
             else:
-                new_lr = self._lr  # keep self._lr after num_warmup_steps
+                new_lr = self.base_lr
 
         elif self.schedule_type == "noam":
             new_lr = (
