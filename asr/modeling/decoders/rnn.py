@@ -1,2 +1,0 @@
-""" LAS (Listen Attend Spell)
-"""

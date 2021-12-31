@@ -2,22 +2,30 @@
 
 ## Features
 
-### ASR modeling
+### ASR
 
 * Encoder
     * RNN
-    * Transformer
-    * Conformer
+    * Transformer (Trf.)
+    * Conformer (Cf.) [[Gulati 2020]](https://arxiv.org/abs/2005.08100)
 * Decoder
-    * CTC
-    * Transformer
-    * RNN-Transducer
+    * CTC [[Graves 2006]](https://www.cs.toronto.edu/~graves/icml_2006.pdf)
+    * RNN-Transducer (RNN-T) [[Graves 2012]](https://arxiv.org/abs/1211.3711)
+    * LAS [[Chan 2015]](https://arxiv.org/abs/1508.01211)
+    * Transformer (Trf.)
+
+### LM
+
+* Modeling
+    * Transformer LM
+    * BERT
+    * ELECTRA
 
 ## Results
 
 ### Librispeech[WER]
 
-| |  | params | clean | other |
+| | Decoder(Encoder) | params | clean | other |
 |:---:|:---|:---:|:---:|:---:|
 | `L1` | CTC(Trf.) | 20M | 5.2 | 11.8 |
 | `L2` | CTC(Cf.) | 23M | 4.2 | 10.1 |
@@ -29,7 +37,7 @@
 
 ### TED-LIUM2[WER]
 
-|  |  | params | test | dev |
+|  | Decoder(Encoder) | params | test | dev |
 |:---:|:---|:---:|:---:|:---:|
 | `T1` | CTC(Trf.) | 20M | 10.9 | 12.4 |
 | `T2` | CTC(Cf.) | 23M | 9.4 | 10.1 |
@@ -52,3 +60,5 @@
 
 ## Reference
 
+* https://github.com/hirofumi0810/neural_sp
+* https://github.com/espnet/espnet
