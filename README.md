@@ -6,7 +6,7 @@
 
 * Encoder
     * RNN
-    * Transformer (Trf.)
+    * Transformer (Trf.) [[Vaswani 2017]](https://arxiv.org/abs/1706.03762)
     * Conformer (Cf.) [[Gulati 2020]](https://arxiv.org/abs/2005.08100)
 * Decoder
     * CTC [[Graves 2006]](https://www.cs.toronto.edu/~graves/icml_2006.pdf)
@@ -17,9 +17,16 @@
 ### LM
 
 * Modeling
+    * RNNLM
     * Transformer LM
-    * BERT
-    * ELECTRA
+    * BERT [[Devlin 2018]](https://arxiv.org/abs/1810.04805)
+    * ELECTRA [[Clark 2020]](https://arxiv.org/abs/2003.10555)
+    * Phone-attentive ELECTRA (P-ELECTRA) [[Futami 2021]](https://arxiv.org/abs/2110.01857)
+
+* Method
+    * Rescoring
+    * Shallow Fusion
+    * Knowledge Distillation [[Futami 2020]](https://arxiv.org/abs/2008.03822)
 
 ## Results
 
@@ -57,8 +64,9 @@
 | `C3` | Trf.(Trf.) | 32M | 6.7/5.0 | **4.9**/3.6 | 5.5/4.0 |
 | `C4` | Trf.(Cf.) | 36M | **6.3**/4.7 | 5.0/3.8 | **5.2**/4.0 |
 | `C5` | RNN-T(Cf.) 4kBPE | 33M | 6.4/4.7 | 5.0/4.1 | 5.3/4.1 |
+| `C6` | RNN-T(Cf.) 4kBPE Large | 91M | 6.2/4.5 | 4.9/3.7 | 5.2/4.1 |
 
 ## Reference
 
-* https://github.com/hirofumi0810/neural_sp
 * https://github.com/espnet/espnet
+* https://github.com/hirofumi0810/neural_sp

@@ -6,12 +6,12 @@
 
 | |  | params | PPL(clean) |
 |:---:|:---|:---:|:---:|
-| `T1` | Transformer | 12M | 63.9 |
-| `T2` | BERT | 12M | 12.1 |
-| `T3` | RNN | 13M | ... |
+| `L1` | Transformer | 12M | 63.9 |
+| `L2` | BERT | 12M | 12.1 |
+| `L3` | RNN | 13M | ... |
 
-- `T1`: `exps/libri_nsp10k/transformer`
-- `T2`: `exps/libri_nsp10k/bert`
+- `L1`: `exps/libri_nsp10k/transformer`
+- `L2`: `exps/libri_nsp10k/bert`
 
 ### TED-LIUM2
 
@@ -19,14 +19,12 @@
 
 | |  | params | PPL(test) |
 |:---:|:---|:---:|:---:|
-| `L1` | Transformer | 12M | 56.3 |
-| `L2` | BERT | 12M | 11.6 |
-| `L3` | RNN | 13M | ... |
+| `T1` | Transformer | 12M | 56.3 |
+| `T2` | BERT | 12M | 11.6 |
+| `T3` | RNN | 13M | ... |
 
-- `L1`: `exps/ted2_nsp10k/transformer`
-- `L2`: `exps/ted2_nsp10k/bert`
-
-TODO: ELECTRA, P-ELECTRA
+- `T1`: `exps/ted2_nsp10k/transformer`
+- `T2`: `exps/ted2_nsp10k/bert`
 
 ### CSJ
 
