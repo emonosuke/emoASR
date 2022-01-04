@@ -99,11 +99,21 @@ class ELECTRAModel(nn.Module):
 
         return loss, loss_dict
     
-    def score(self, ys, ylens):
+    def score(self, ys, ylens, batch_size=None):
         """ score token sequence for Rescoring
         """
-        pass
+        attention_mask = make_nopad_mask(ylens).float().to(ys.device)
+        
+        logits, = self.dmodel(ys, attention_mask=attention_mask)
+        probs = torch.sigmoid(logits)
 
+        score_lms = []
+        bs = len(ys)
+        for b in range(bs):
+            score_lm = (-1) * torch.sum(probs[b, : ylens[b]], dim=-1).item()
+            score_lms.append(score_lm)
+        
+        return score_lms
 
 class PELECTRAModel(nn.Module):
     """
@@ -174,7 +184,18 @@ class PELECTRAModel(nn.Module):
 
         return loss, loss_dict
 
-    def score(self, ys, ylens):
+    def score(self, ys, ylens, batch_size=None):
         """ score token sequence for Rescoring
         """
-        pass
+        attention_mask = make_nopad_mask(ylens).float().to(ys.device)
+        
+        logits, = self.dmodel(ys, attention_mask=attention_mask)
+        probs = torch.sigmoid(logits)
+
+        score_lms = []
+        bs = len(ys)
+        for b in range(bs):
+            score_lm = (-1) * torch.sum(probs[b, : ylens[b]], dim=-1).item()
+            score_lms.append(score_lm)
+        
+        return score_lms

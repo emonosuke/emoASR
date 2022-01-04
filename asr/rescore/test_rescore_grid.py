@@ -26,7 +26,7 @@ BATCH_SIZE = 100
 EPS = 1e-5
 
 
-def score_lm(df, model, device, vocab=None, num_samples=-1):
+def score_lm(df, model, device, mask_id=None, vocab=None, num_samples=-1):
     ys, ylens, score_lms_all = [], [], []
 
     utt_id = None
@@ -48,8 +48,8 @@ def score_lm(df, model, device, vocab=None, num_samples=-1):
 
         ys_pad = pad_sequence(ys, batch_first=True).to(device)
         ylens = torch.tensor(ylens).to(device)
-
-        score_lms = model.score(ys_pad, ylens)
+        
+        score_lms = model.score(ys_pad, ylens, batch_size=BATCH_SIZE)
 
         if vocab is not None:  # debug mode
             for y, score_lm in zip(ys, score_lms):
@@ -62,10 +62,6 @@ def score_lm(df, model, device, vocab=None, num_samples=-1):
 
     df["score_lm"] = score_lms_all
     return df
-
-
-def score_mlm(df, model, device, mask_id, vocab=None, num_samples=-1):
-    pass
 
 
 def rescore(df, dfref, lm_weight, len_weight):
@@ -86,33 +82,36 @@ def main(args):
         os.environ["CUDA_VISIBLE_DEVICES"] = ""
     else:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    
+    lm_params = load_config(args.lm_conf)
+    lm_tag = lm_params.lm_type if args.lm_tag is None else args.lm_tag
     if args.debug or args.runtime:
         logging.basicConfig(
             format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
             level=logging.DEBUG,
         )
     else:
-        log_path = args.tsv_path.replace(".tsv", ".log")
+        log_path = args.tsv_path.replace(".tsv", f"_{lm_tag}.log")
         logging.basicConfig(
             filename=log_path,
             format="%(asctime)s (%(module)s:%(lineno)d) %(levelname)s: %(message)s",
             level=logging.INFO,
         )
-
+    
     df = pd.read_table(args.tsv_path)
     df = df.dropna()
     dfref = pd.read_table(get_eval_path(args.ref))
 
     # LM
     lm_path = get_model_path(args.lm_conf, args.lm_ep)
-    logging.info(f"LM: {lm_path}")
     lm_params = load_config(args.lm_conf)
     lm = LM(lm_params, phase="test")
     lm.load_state_dict(torch.load(lm_path, map_location=device))
+    logging.info(f"LM: {lm_path}")
     lm.to(device)
     lm.eval()
 
+    mask_id = lm_params.mask_id if hasattr(lm_params, "mask_id") else None
     vocab = Vocab(rel_to_abs_path(lm_params.vocab_path)) if args.debug else None
 
     if args.runtime:
@@ -124,16 +123,9 @@ def main(args):
 
         for j in range(args.runtime_num_repeats):
             start_time = time.time()
-            if lm_params.lm_type in ["transformer"]:
-                score_lm(df, lm, device, num_samples=args.runtime_num_samples)
-            elif lm_params.lm_type in ["bert"]:
-                score_mlm(
-                    df,
-                    lm,
-                    device,
-                    mask_id=lm_params.mask_id,
-                    num_samples=args.runtime_num_samples,
-                )
+
+            score_lm(df, lm, device, mask_id=mask_id, num_samples=args.runtime_num_samples)
+            
             runtime = time.time() - start_time
             runtime /= args.runtime_num_samples
             logging.info(f"Run {(j+1):d} runtime: {runtime:.5f}sec / utt")
@@ -141,21 +133,16 @@ def main(args):
 
         logging.info(f"Average runtime {np.mean(runtimes):.5f}sec on {device.type}")
         return
+    
+    scored_tsv_path = args.tsv_path.replace(".tsv", f"_{lm_tag}.tsv")
 
     # calculate `score_lm`
-    if "score_lm" not in df:
-        if lm_params.lm_type in ["transformer"]:
-            df = score_lm(df, lm, device, vocab=vocab)
-        elif lm_params.lm_type in ["bert"]:
-            df = score_mlm(df, lm, device, mask_id=lm_params.mask_id, vocab=vocab)
-
-        lm_tag = lm_params.lm_type if args.lm_tag is None else args.lm_tag
-        scored_tsv_path = args.tsv_path.replace(".tsv", f"{lm_tag}score.tsv")
+    if not os.path.exists(scored_tsv_path):
+        df = score_lm(df, lm, device, mask_id=mask_id, vocab=vocab)
         df.to_csv(scored_tsv_path, sep="\t", index=False)
     else:
-        scored_tsv_path = args.tsv_path
-
-    scored_log_path = scored_tsv_path.replace(".tsv", ".log")
+        logging.info(f"load score_lm: {scored_tsv_path}")
+        df = pd.read_table(scored_tsv_path)
 
     # grid search
     lm_weight_cands = np.arange(args.lm_min, args.lm_max + EPS, args.lm_step)
@@ -182,7 +169,7 @@ def main(args):
                 df_best = df_result
 
     best_tsv_path = scored_tsv_path.replace(
-        ".tsv", f"_lm{lm_weight_best}_len{len_weight_best}.tsv"
+        ".tsv", f"_lm{lm_weight_best:.2f}_len{len_weight_best:.2f}.tsv"
     )
     logging.info(
         f"best lm_weight: {lm_weight_best:.3f} len_weight: {len_weight_best:.3f}"

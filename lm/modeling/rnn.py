@@ -41,7 +41,7 @@ class RNNLM(nn.Module):
 
         return loss, loss_dict
 
-    def score(self, ys, ylens):
+    def score(self, ys, ylens, batch_size=None):
         """ score token sequence for Rescoring
         """
         pass

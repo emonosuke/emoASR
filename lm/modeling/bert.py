@@ -8,7 +8,6 @@ EMOASR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")
 sys.path.append(EMOASR_DIR)
 
 from asr.modeling.model_utils import make_nopad_mask
-from utils.io_utils import load_config
 
 from lm.modeling.transformers.configuration_transformers import \
     TransformersConfig
@@ -31,6 +30,8 @@ class BERTMaskedLM(nn.Module):
         # if params.tie_weights:
         #     pass
 
+        self.mask_id = params.mask_id
+
     def forward(self, ys, ylens=None, labels=None, ps=None, plens=None):
         if ylens is None:
             attention_mask = None
@@ -49,6 +50,40 @@ class BERTMaskedLM(nn.Module):
         loss_dict = {"loss_total": loss}
 
         return loss, loss_dict
+    
+    def score(self, ys, ylens, batch_size=100):
+        """ score token sequence for Rescoring
+        """
+        score_lms = []
+
+        for y, ylen in zip(ys, ylens):
+            ys_masked, mask_pos, mask_label = [], [], []
+
+            score_lm = 0
+
+            for pos in range(ylen):
+                y_masked = y[:ylen].clone()
+                y_masked[pos] = self.mask_id
+                ys_masked.append(y_masked)
+                mask_pos.append(pos)
+                mask_label.append(y[pos])
+
+                if len(ys_masked) < batch_size and pos != (ylen - 1):
+                    continue
+                
+                ys_masked = torch.stack(ys_masked, dim=0)
+                (logits,) = self.bert(ys_masked)
+                logprobs = torch.log_softmax(logits, dim=-1)
+
+                bs = ys_masked.size(0)
+                for b in range(bs):
+                    score_lm += logprobs[b, mask_pos[b], mask_label[b]].item()
+
+                ys_masked, mask_pos, mask_label = [], [], []
+
+            score_lms.append(score_lm)
+        
+        return score_lms
 
     def load_state_dict(self, state_dict):
         try:

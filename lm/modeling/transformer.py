@@ -72,7 +72,7 @@ class TransformerLM(nn.Module):
 
         return torch.tensor(log_probs_next).to(ys.device), states
 
-    def score(self, ys, ylens):
+    def score(self, ys, ylens, batch_size=None):
         """ score token sequence for Rescoring
         """
         attention_mask = make_nopad_mask(ylens).float().to(ys.device)

@@ -48,8 +48,8 @@ class LM(nn.Module):
     def predict(self, ys, ylens, states=None):
         return self.lm.predict(ys, ylens, states)
 
-    def score(self, ys, ylens):
-        return self.lm.score(ys, ylens)
+    def score(self, ys, ylens, batch_size=100):
+        return self.lm.score(ys, ylens, batch_size)
 
     def load_state_dict(self, state_dict):
         try:
