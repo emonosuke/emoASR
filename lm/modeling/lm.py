@@ -15,12 +15,13 @@ from utils.log import get_num_parameters
 
 from lm.modeling.bert import BERTMaskedLM
 from lm.modeling.electra import ELECTRAModel, PELECTRAModel
+from lm.modeling.rnn import RNNLM
 from lm.modeling.transformer import TransformerLM
 
 
 class LM(nn.Module):
     def __init__(self, params, phase="train"):
-        super(LM, self).__init__()
+        super().__init__()
 
         self.lm_type = params.lm_type
         logging.info(f"LM type: {self.lm_type}")
@@ -33,6 +34,8 @@ class LM(nn.Module):
             self.lm = ELECTRAModel(params)
         elif self.lm_type == "pelectra":
             self.lm = PELECTRAModel(params)
+        elif self.lm_type == "rnn":
+            self.lm = RNNLM(params)
 
         num_params, num_params_trainable = get_num_parameters(self)
         logging.info(

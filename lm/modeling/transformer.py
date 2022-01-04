@@ -1,6 +1,7 @@
 import os
 import sys
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -10,13 +11,14 @@ sys.path.append(EMOASR_DIR)
 from asr.modeling.model_utils import make_nopad_mask
 from utils.converters import tensor2np
 
-from lm.modeling.transformers.configuration_transformers import TransformersConfig
+from lm.modeling.transformers.configuration_transformers import \
+    TransformersConfig
 from lm.modeling.transformers.modeling_bert import BertForMaskedLM
 
 
 class TransformerLM(nn.Module):
     def __init__(self, params):
-        super(TransformerLM, self).__init__()
+        super().__init__()
         config = TransformersConfig(
             vocab_size=params.vocab_size,
             hidden_size=params.hidden_size,
@@ -27,6 +29,9 @@ class TransformerLM(nn.Module):
         )
         self.transformer = BertForMaskedLM(config)
 
+        # if params.tie_weights:
+        #     pass
+
     def forward(self, ys, ylens=None, labels=None, ps=None, plens=None):
         if ylens is None:
             attention_mask = None
@@ -34,19 +39,19 @@ class TransformerLM(nn.Module):
             attention_mask = make_nopad_mask(ylens).float().to(ys.device)
             # DataParallel
             ys = ys[:, : max(ylens)]
-            labels = labels[:, : max(ylens)]
-
-        loss = None
-        loss_dict = {}
-        # NOTE: causal attention mask
+        
         if labels is None:
+            # NOTE: causal attention mask
             (logits,) = self.transformer(ys, attention_mask=attention_mask, causal=True)
             return logits
-
+        
+        if ylens is not None:
+            labels = labels[:, : max(ylens)]
+        # NOTE: causal attention mask
         loss, logits = self.transformer(
             ys, attention_mask=attention_mask, causal=True, labels=labels
         )
-        loss_dict["loss_total"] = loss
+        loss_dict = {"loss_total": loss}
 
         return loss, loss_dict
 
@@ -65,7 +70,7 @@ class TransformerLM(nn.Module):
         for b in range(bs):
             log_probs_next.append(tensor2np(log_probs[b, ylens[b] - 1]))
 
-        return torch.tensor(log_probs_next, device=ys.device), states
+        return torch.tensor(log_probs_next).to(ys.device), states
 
     def score(self, ys, ylens):
         """ score token sequence for Rescoring

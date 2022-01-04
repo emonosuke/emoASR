@@ -79,7 +79,7 @@ class LMDataset(Dataset):
                     mask_proportion=self.mask_proportion,
                     random_num_to_mask=self.random_num_to_mask,
                 )
-            elif self.lm_type == "transformer":
+            elif self.lm_type in ["transformer", "rnn"]:
                 assert len(y) > 1
                 y_in = y[:-1]
                 label = y[1:]
@@ -117,6 +117,13 @@ class P2WDataset(Dataset):
         else:
             self.data = self.data[["utt_id", "token_id", "phone_token_id"]]
 
+        len_data = len(self.data)
+        self.data = self.data.dropna().reset_index(drop=True)
+        if len(self.data) != len_data:
+            logging.warning(
+                f"nan value in dataset is removed: {len_data:d} -> {len(self.data):d}"
+            )
+        
         self.lm_type = params.lm_type
         self.add_sos_eos = params.add_sos_eos
         self.phase = phase
@@ -146,6 +153,12 @@ class P2WDataset(Dataset):
                 params.mask_proportion if hasattr(params, "mask_proportion") else -1
             )
             self.random_num_to_mask = params.random_num_to_mask
+            self.mask_insert_poisson_lam = (
+                params.mask_insert_poisson_lam
+                if hasattr(params, "mask_insert_poisson_lam")
+                else -1
+            )
+            self.pad_id = params.pad_id if hasattr(params, "pad_id") else 0
 
     def __len__(self):
         return len(self.data)
@@ -166,16 +179,30 @@ class P2WDataset(Dataset):
 
         if self.phase == "train":
             if self.lm_type in ["pelectra", "pbert"]:
-                y_in, label = create_masked_lm_label(
-                    y,
-                    mask_id=self.mask_id,
-                    num_to_mask=self.num_to_mask,
-                    mask_proportion=self.mask_proportion,
-                    random_num_to_mask=self.random_num_to_mask,
-                )
+                if self.mask_insert_poisson_lam > 0:
+                    y_in, label = create_masked_lm_label_insert(
+                        y,
+                        mask_id=self.mask_id,
+                        num_to_mask=self.num_to_mask,
+                        mask_proportion=self.mask_proportion,
+                        random_num_to_mask=self.random_num_to_mask,
+                        insert_poisson_lam=self.mask_insert_poisson_lam,
+                        pad_id=self.pad_id,
+                    )
+                else:
+                    y_in, label = create_masked_lm_label(
+                        y,
+                        mask_id=self.mask_id,
+                        num_to_mask=self.num_to_mask,
+                        mask_proportion=self.mask_proportion,
+                        random_num_to_mask=self.random_num_to_mask,
+                    )
             elif self.lm_type == "ptransformer":
                 y_in = y[:-1]
                 label = y[1:]
+            elif self.lm_type == "pctc":
+                y_in = y
+                label = p
         else:
             y_in = y
             label = None
@@ -241,6 +268,7 @@ class LMBatchSampler(Sampler):
 
                 assert plen <= self.max_plens_batch
                 assert ylen <= self.max_ylens_batch
+                #print(plens_sum + plen, ylens_sum + ylen)
                 if (
                     plens_sum + plen > self.max_plens_batch
                     or ylens_sum + ylen > self.max_ylens_batch
@@ -275,7 +303,7 @@ class LMBatchSampler(Sampler):
 
 
 def create_masked_lm_label(
-    y, mask_id, num_to_mask=-1, mask_proportion=-1, random_num_to_mask=False
+    y, mask_id, num_to_mask=-1, mask_proportion=-1, random_num_to_mask=False,
 ):
     y_masked = y.clone()
     masked_lm_label = torch.full(y.shape, dtype=np.int, fill_value=-100)
@@ -299,9 +327,41 @@ def create_masked_lm_label(
     return y_masked, masked_lm_label
 
 
+def create_masked_lm_label_insert(
+    y,
+    mask_id,
+    num_to_mask=-1,
+    mask_proportion=-1,
+    random_num_to_mask=False,
+    insert_poisson_lam=-1,
+    pad_id=0,
+):
+    y_masked, masked_lm_label = create_masked_lm_label(
+        y, mask_id, num_to_mask, mask_proportion, random_num_to_mask
+    )
+    if insert_poisson_lam > 0:
+        num_inserts = np.random.poisson(insert_poisson_lam, len(y_masked))
+        y_masked_insert = torch.full(
+            [len(y_masked) + sum(num_inserts)], dtype=np.int, fill_value=mask_id
+        )
+        masked_lm_label_insert = torch.full(
+            [len(y_masked) + sum(num_inserts)], dtype=np.int, fill_value=pad_id
+        )
+        index = 0
+        for y, label, num_insert in zip(y_masked, masked_lm_label, num_inserts):
+            y_masked_insert[index] = y
+            masked_lm_label_insert[index] = label
+            index = index + 1 + num_insert
+    return y_masked_insert, masked_lm_label_insert
+
+
 # test `create_masked_lm_label`
 if __name__ == "__main__":
+    # y = torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+    # y_masked, masked_lm_label = create_masked_lm_label(y, mask_id=100, mask_proportion=0.3)
     y = torch.tensor([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
-    y_masked, masked_lm_label = create_masked_lm_label(y, mask_id=100, mask_prob=0.3)
+    y_masked, masked_lm_label = create_masked_lm_label_insert(
+        y, mask_id=100, mask_proportion=0.3, insert_poisson_lam=0.2, pad_id=0
+    )
     print(y_masked)
     print(masked_lm_label)

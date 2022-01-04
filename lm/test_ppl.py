@@ -29,7 +29,7 @@ torch.cuda.manual_seed_all(0)
 LOG_STEP = 100
 
 
-def ppl_lm(dataloader, model, device, vocab):
+def ppl_lm(dataloader, model, device, vocab, add_sos_eos=False):
     cnt = 0
     sum_logprob = 0
 
@@ -45,13 +45,25 @@ def ppl_lm(dataloader, model, device, vocab):
         ylens = data["ylens"].to(device) - 1
         assert ys.size(0) == 1
 
+        # for P2WDataset
+        ps = data["ps"].to(device) if "ps" in data else None
+        plens = data["plens"].to(device) if "plens" in data else None
+
         if ys.size(1) <= 1:
+            logging.warning(f"skip {utt_id}")
+            continue
+        if add_sos_eos and ys.size(1) <= 3:
             logging.warning(f"skip {utt_id}")
             continue
 
         with torch.no_grad():
-            logits = model(ys_in, ylens, labels=None)
+            logits = model(ys_in, ylens, labels=None, ps=ps, plens=plens)
         logprobs = torch.log_softmax(logits, dim=-1)
+        
+        # NOTE: skip the first token and <eos> prediction
+        if add_sos_eos:
+            logprobs = logprobs[:, 1:-1]
+            ys_out = ys_out[:, 1:-1]
 
         for logprob, label in zip(logprobs[0], ys_out[0]):
             sum_logprob -= logprob[label].item()
@@ -121,7 +133,7 @@ def ppl_masked_lm(dataloader, model, device, mask_id, max_seq_len, vocab):
     return cnt, ppl
 
 
-def test(model, dataloader, params, device, vocab):
+def test(model, dataloader, params, device, vocab, add_sos_eos=False):
     if params.lm_type in ["bert", "pbert"]:
         cnt, ppl = ppl_masked_lm(
             dataloader,
@@ -131,8 +143,8 @@ def test(model, dataloader, params, device, vocab):
             max_seq_len=params.max_seq_len,
             vocab=vocab,
         )
-    elif params.lm_type == "transformer":
-        cnt, ppl = ppl_lm(dataloader, model, device, vocab=vocab)
+    elif params.lm_type in ["transformer", "rnn", "ptransformer"]:
+        cnt, ppl = ppl_lm(dataloader, model, device, vocab=vocab, add_sos_eos=add_sos_eos)
 
     logging.info(f"{cnt} tokens")
     return ppl
@@ -190,7 +202,7 @@ def main(args):
     model.to(device)
     model.eval()
 
-    ppl = test(model, dataloader, params, device, vocab)
+    ppl = test(model, dataloader, params, device, vocab, add_sos_eos=params.add_sos_eos)
 
     ppl_info = f"PPL: {ppl:.2f} (conf: {args.conf})"
     logging.info(ppl_info)

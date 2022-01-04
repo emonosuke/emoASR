@@ -10,7 +10,8 @@ sys.path.append(EMOASR_DIR)
 from asr.modeling.model_utils import make_nopad_mask
 from utils.io_utils import load_config
 
-from lm.modeling.transformers.configuration_transformers import TransformersConfig
+from lm.modeling.transformers.configuration_transformers import \
+    TransformersConfig
 from lm.modeling.transformers.modeling_bert import BertForMaskedLM
 
 
@@ -27,6 +28,9 @@ class BERTMaskedLM(nn.Module):
         )
         self.bert = BertForMaskedLM(config)
 
+        # if params.tie_weights:
+        #     pass
+
     def forward(self, ys, ylens=None, labels=None, ps=None, plens=None):
         if ylens is None:
             attention_mask = None
@@ -35,15 +39,14 @@ class BERTMaskedLM(nn.Module):
             # DataParallel
             ys = ys[:, : max(ylens)]
 
-        loss = None
-        loss_dict = {}
         if labels is None:
             (logits,) = self.bert(ys, attention_mask=attention_mask)
             return logits
 
-        labels = labels[:, : max(ylens)]
+        if ylens is not None:
+            labels = labels[:, : max(ylens)]
         loss, logits = self.bert(ys, attention_mask=attention_mask, labels=labels)
-        loss_dict["loss_total"] = loss
+        loss_dict = {"loss_total": loss}
 
         return loss, loss_dict
 

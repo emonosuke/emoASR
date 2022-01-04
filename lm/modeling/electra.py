@@ -13,10 +13,8 @@ from utils.log import get_num_parameters
 
 from lm.modeling.p2w import P2W
 from lm.modeling.transformers.configuration_electra import ElectraConfig
-from lm.modeling.transformers.modeling_electra import (
-    ElectraForMaskedLM,
-    ElectraForPreTraining,
-)
+from lm.modeling.transformers.modeling_electra import (ElectraForMaskedLM,
+                                                       ElectraForPreTraining)
 
 
 def sample_temp(logits, temp=1.0):
@@ -100,6 +98,11 @@ class ELECTRAModel(nn.Module):
         loss_dict["num_masked"] = masked_indices.sum().long() / ys.size(0)
 
         return loss, loss_dict
+    
+    def score(self, ys, ylens):
+        """ score token sequence for Rescoring
+        """
+        pass
 
 
 class PELECTRAModel(nn.Module):
@@ -112,11 +115,7 @@ class PELECTRAModel(nn.Module):
 
         # Generator: condictional MLM
         self.gmodel = P2W(
-            params,
-            cmlm=True,
-            encoder_type="transformer",
-            decoder_type="bert",
-            return_logits=True,
+            params, encoder_type="transformer", decoder_type="bert", return_logits=True,
         )
         num_params, num_params_trainable = get_num_parameters(self.gmodel)
         logging.info(
@@ -174,3 +173,8 @@ class PELECTRAModel(nn.Module):
         loss_dict["num_masked"] = masked_indices.sum().long() / ys.size(0)
 
         return loss, loss_dict
+
+    def score(self, ys, ylens):
+        """ score token sequence for Rescoring
+        """
+        pass

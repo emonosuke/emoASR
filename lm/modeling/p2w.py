@@ -12,7 +12,7 @@ EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")
 sys.path.append(EMOASR_ROOT)
 
 # same modeling as ASR
-from asr.modeling.decoders.transformer import TransformerDecoder
+from asr.modeling.decoders.transformer import CTCDecoder, TransformerDecoder
 from asr.modeling.encoders.transformer import TransformerEncoder
 from utils.log import get_num_parameters
 
@@ -24,19 +24,31 @@ class P2W(nn.Module):
         phase="train",
         encoder_type=None,
         decoder_type=None,
-        cmlm=False,
         return_logits=False,
     ):
-        super(P2W, self).__init__()
+        super().__init__()
 
         self.lm_type = params.lm_type
         logging.info(f"LM type: {self.lm_type}")
 
         self.encoder = TransformerEncoder(params)
-        if self.lm_type == "ptransformer":
+
+        if decoder_type is None:
+            if self.lm_type == "ptransformer":
+                self.decoder_type = "transformer"
+            elif self.lm_type == "pbert":
+                self.decoder_type = "bert"
+            elif self.lm_type == "pctc":
+                self.decoder_type = "ctc"
+        else:
+            self.decoder_type = decoder_type
+
+        if self.decoder_type == "transformer":
             self.decoder = TransformerDecoder(params)
-        elif self.lm_type == "pbert":
+        elif self.decoder_type == "bert":
             self.decoder = TransformerDecoder(params, cmlm=True)
+        elif self.decoder_type == "ctc":
+            self.decoder = CTCDecoder(params)
 
         self.vocab_size = params.vocab_size
         self.eos_id = params.eos_id
@@ -49,15 +61,26 @@ class P2W(nn.Module):
 
         self.return_logits = return_logits
 
-    def forward(self, ys, ylens, labels=None, ps=None, plens=None):
+    def forward(self, ys=None, ylens=None, labels=None, ps=None, plens=None):
         # DataParallel
-        ps = ps[:, : max(plens)]
-        ys = ys[:, : max(ylens)]
+        if plens is None:
+            plens = torch.tensor([ps.size(1)]).to(ps.device)
+        else:
+            ps = ps[:, : max(plens)]
+
+        if ylens is None:
+            ylens = torch.tensor([ys.size(1)]).to(ys.device)
+        else:
+            ys = ys[:, : max(ylens)]
 
         eouts, elens, _ = self.encoder(ps, plens)
 
+        if self.decoder_type == "ctc":
+            loss, loss_dict, logits = self.decoder(eouts, elens, ys=ys, ylens=ylens)
+            return loss, loss_dict
+
         # FIXME: take care of `ymask = make_tgt_mask(ylens + 1)`
-        if self.lm_type == "ptransformer":
+        if self.decoder_type == "transformer":
             ylens -= 1
 
         if labels is None:
@@ -74,3 +97,11 @@ class P2W(nn.Module):
             return loss, loss_dict, logits
         else:
             return loss, loss_dict
+
+    def decode(self, ps, plens=None):
+        if plens is None:
+            plens = torch.tensor([ps.size(1)]).to(ps.device)
+        
+        eouts, elens, _ = self.encoder(ps, plens)
+        hyps, _, _, _ = self.decoder.decode(eouts, elens)
+        return hyps

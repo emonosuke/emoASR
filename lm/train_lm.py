@@ -18,13 +18,11 @@ from torch.utils.data import DataLoader
 EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
-from asr.optimizers import (
-    ScheduledOptimizer,
-    get_optimizer_params_nodecay,
-    optimizer_to,
-)
+from asr.optimizers import (ScheduledOptimizer, get_optimizer_params_nodecay,
+                            optimizer_to)
 from utils.configure import load_config
-from utils.paths import get_log_save_paths, get_model_optim_paths, rel_to_abs_path
+from utils.paths import (get_log_save_paths, get_model_optim_paths,
+                         rel_to_abs_path)
 
 from lm.datasets import LMBatchSampler, LMDataset, P2WDataset
 from lm.modeling.lm import LM
@@ -164,7 +162,7 @@ def main(args):
     logging.info(f"conda env: {os.environ['CONDA_DEFAULT_ENV']}")
     logging.info(f"torch version: {torch.__version__}")
 
-    if params.lm_type in ["ptransformer", "pbert"]:
+    if params.lm_type in ["ptransformer", "pbert", "pctc"]:
         model = P2W(params)
     else:
         model = LM(params)
@@ -223,7 +221,7 @@ def main(args):
             for step_ds, train_file in enumerate(train_files):
                 train_file_path = os.path.join(train_path, train_file)
 
-                if params.lm_type in ["pelectra", "ptransformer", "pbert"]:
+                if params.lm_type in ["pelectra", "ptransformer", "pbert", "pctc"]:
                     dataset = P2WDataset(params, train_file_path)
                 else:
                     dataset = LMDataset(params, train_file_path)
@@ -254,7 +252,7 @@ def main(args):
                 )
                 train(model, optimizer, dataloader, params, device, epoch)
         else:
-            if params.lm_type in ["pelectra", "ptransformer", "pbert"]:
+            if params.lm_type in ["pelectra", "ptransformer", "pbert", "pctc"]:
                 dataset = P2WDataset(params, train_path)
             else:
                 dataset = LMDataset(params, train_path)
