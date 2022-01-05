@@ -24,11 +24,14 @@ phone_eos_id = 2
 class LMDataset(Dataset):
     def __init__(self, params, data_path, phase="train", size=-1):
         self.data = pd.read_table(data_path, comment="#")
-
-        if params.bucket_shuffle:
-            self.data = self.data[["utt_id", "token_id", "ylen"]]
+        
+        if params.lm_type in ["electra-disc", "pelectra-disc"]:
+            self.data = self.data[["utt_id", "token_id", "error_label"]]
         else:
-            self.data = self.data[["utt_id", "token_id"]]
+            if params.bucket_shuffle:
+                self.data = self.data[["utt_id", "token_id", "ylen"]]
+            else:
+                self.data = self.data[["utt_id", "token_id"]]
 
         len_data = len(self.data)
         self.data = self.data.dropna().reset_index(drop=True)
@@ -69,6 +72,12 @@ class LMDataset(Dataset):
             token_id = [eos_id] + token_id + [eos_id]
 
         y = torch.tensor(token_id, dtype=torch.long)
+        
+        if "error_label" in self.data:
+            error_label = self.data.loc[idx]["error_label"].split()
+            error_label = torch.tensor([e != "C" for e in error_label], dtype=float)
+        else:
+            error_label = None
 
         if self.phase == "train":
             if self.lm_type in ["bert", "electra"]:
@@ -83,17 +92,20 @@ class LMDataset(Dataset):
                 assert len(y) > 1
                 y_in = y[:-1]
                 label = y[1:]
+            elif self.lm_type in ["electra-disc", "pelectra-disc"]:
+                y_in = y
+                label = None
         else:
             y_in = y
             label = None
 
         ylen = y_in.size(0)
 
-        return utt_id, y_in, ylen, label
+        return utt_id, y_in, ylen, label, error_label
 
     @staticmethod
     def collate_fn(batch):
-        utt_ids, ys_in, ylens, labels = zip(*batch)
+        utt_ids, ys_in, ylens, labels, error_labels = zip(*batch)
 
         ret = {}
 
@@ -102,6 +114,8 @@ class LMDataset(Dataset):
         ret["ylens"] = torch.tensor(ylens)
         if labels[0] is not None:
             ret["labels"] = pad_sequence(labels, batch_first=True, padding_value=-100)
+        if error_labels[0] is not None:
+            ret["error_labels"] = pad_sequence(error_labels, batch_first=True, padding_value=-100)
 
         return ret
 

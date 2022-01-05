@@ -99,13 +99,29 @@ class ELECTRAModel(nn.Module):
 
         return loss, loss_dict
     
+    def forward_disc(self, ys, ylens=None, error_labels=None):
+        if ylens is None:
+            attention_mask = None
+        else:
+            attention_mask = make_nopad_mask(ylens).float().to(ys.device)
+            ys = ys[:, : max(ylens)]  # DataParallel
+
+        loss, _ = self.dmodel(
+            ys, attention_mask=attention_mask, labels=error_labels
+        )
+        loss_dict = {"loss_total": loss}
+
+        return loss, loss_dict
+    
     def score(self, ys, ylens, batch_size=None):
         """ score token sequence for Rescoring
         """
         attention_mask = make_nopad_mask(ylens).float().to(ys.device)
-        
         logits, = self.dmodel(ys, attention_mask=attention_mask)
         probs = torch.sigmoid(logits)
+
+        if ys.size(0) == 1:
+            return [torch.sum(probs, dim=-1).item()]
 
         score_lms = []
         bs = len(ys)
@@ -183,14 +199,30 @@ class PELECTRAModel(nn.Module):
         loss_dict["num_masked"] = masked_indices.sum().long() / ys.size(0)
 
         return loss, loss_dict
+    
+    def forward_disc(self, ys, ylens=None, error_labels=None):
+        if ylens is None:
+            attention_mask = None
+        else:
+            attention_mask = make_nopad_mask(ylens).float().to(ys.device)
+            ys = ys[:, : max(ylens)]  # DataParallel
+
+        loss, _ = self.dmodel(
+            ys, attention_mask=attention_mask, labels=error_labels
+        )
+        loss_dict = {"loss_total": loss}
+
+        return loss, loss_dict
 
     def score(self, ys, ylens, batch_size=None):
         """ score token sequence for Rescoring
         """
         attention_mask = make_nopad_mask(ylens).float().to(ys.device)
-        
         logits, = self.dmodel(ys, attention_mask=attention_mask)
         probs = torch.sigmoid(logits)
+
+        if ys.size(0) == 1:
+            return [torch.sum(probs, dim=-1).item()]
 
         score_lms = []
         bs = len(ys)
