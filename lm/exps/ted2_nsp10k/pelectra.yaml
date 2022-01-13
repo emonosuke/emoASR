@@ -1,0 +1,74 @@
+lm_type: "pelectra"
+lr_schedule_type: "lindecay"
+
+# Generator
+input_layer: "embed"
+enc_hidden_size: 256
+enc_num_attention_heads: 4
+enc_num_layers: 4
+enc_intermediate_size: 1024
+dec_hidden_size: 256
+dec_num_attention_heads: 4
+dec_num_layers: 4
+dec_intermediate_size: 1024
+dropout_enc_rate: 0.1
+dropout_dec_rate: 0.1
+dropout_attn_rate: 0.1
+mtl_ctc_weight: 0
+lsm_prob: 0
+kd_weight: 0
+max_decode_ylen: 256
+
+# Discriminator
+disc_embedding_size: 256
+disc_hidden_size: 256
+disc_intermediate_size: 1024
+disc_num_attention_heads: 4
+disc_num_layers: 12
+
+vocab_size: 9798
+src_vocab_size: 45
+max_seq_len: 256
+blank_id: 0
+eos_id: 2
+mask_id: 9797
+phone_eos_id: 2
+phone_mask_id: 44
+
+# textaug
+text_augment: true
+textaug_max_mask_prob: 0.6
+textaug_max_replace_prob: 0
+
+train_path: "corpora/ted2/nsp10k/data/train_ext_p2w_concat_noshuf"
+train_size: 1167745
+add_sos_eos: false
+dev_path: "corpora/ted2/nsp10k/data/dev_p2w.tsv"
+test_path: "corpora/ted2/nsp10k/data/test_p2w.tsv"
+phone_vocab_path: "corpora/ted2/nsp10k/data/orig/vocab_phone.txt"
+vocab_path: "corpora/ted2/nsp10k/data/orig/vocab.txt"
+bucket_shuffle: false
+
+model_path: ""
+optim_path: ""
+startep: 0
+
+log_step: 25
+save_step: 1
+
+# train
+batch_size: 100
+num_epochs: 40
+learning_rate: 0.0002
+warmup_proportion: 0.1
+weight_decay: 0.01
+electra_disc_weight: 50
+
+# different from electra
+# we also compared this strategy on electra pre-training, but it didn't work well.
+mask_proportion: 0.3
+random_num_to_mask: true
+
+clip_grad_norm: 5.0
+
+accum_grad: 1

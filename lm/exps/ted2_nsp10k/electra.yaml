@@ -1,0 +1,48 @@
+lm_type: "electra"
+lr_schedule_type: "lindecay"
+
+# Generator
+gen_embedding_size: 256
+gen_hidden_size: 256
+gen_intermediate_size: 1024
+gen_num_attention_heads: 4
+gen_num_layers: 12
+
+# Discriminator (same size as Generator)
+disc_embedding_size: 256
+disc_hidden_size: 256
+disc_intermediate_size: 1024
+disc_num_attention_heads: 4
+disc_num_layers: 12
+
+vocab_size: 9798
+max_seq_len: 256
+eos_id: 2
+mask_id: 9797
+
+train_path: "corpora/ted2/nsp10k/data/train_ext_concat_noshuf/"
+train_size: 1232639
+add_sos_eos: false
+dev_path: ""
+test_path: ""
+vocab_path: "corpora/ted2/nsp10k/data/orig/vocab.txt"
+
+model_path: ""
+optim_path: ""
+startep: 0
+
+log_step: 25
+save_step: 1
+
+# train
+batch_size: 90
+num_epochs: 40
+learning_rate: 0.0001
+warmup_proportion: 0.1
+weight_decay: 0.01
+electra_disc_weight: 50
+num_to_mask: 35
+random_num_to_mask: false
+clip_grad_norm: 5.0
+
+accum_grad: 1
