@@ -25,7 +25,7 @@ LOG_0 = -1e10
 
 class CTCDecoder(nn.Module):
     def __init__(self, params):
-        super(CTCDecoder, self).__init__()
+        super().__init__()
 
         self.blank_id = params.blank_id
         self.eos_id = params.eos_id
@@ -33,7 +33,7 @@ class CTCDecoder(nn.Module):
 
         self.output = nn.Linear(params.enc_hidden_size, self.vocab_size)
 
-        self.ctc_loss = nn.CTCLoss(
+        self.ctc_loss_fn = nn.CTCLoss(
             blank=self.blank_id, reduction="sum", zero_infinity=True
         )
 
@@ -56,13 +56,31 @@ class CTCDecoder(nn.Module):
             )
 
         if self.kd_weight > 0:
-            self.ctc_kd_loss = CTCAlignDistillLoss(
+            self.ctc_kd_loss_fn = CTCAlignDistillLoss(
                 vocab_size=params.vocab_size,
                 blank_id=params.blank_id,
                 lsm_prob=params.lsm_prob,
+                position=params.kd_ctc_position if hasattr(params, "kd_ctc_position") else "all"
             )
             self.reduce_main_loss_kd = params.reduce_main_loss_kd
             self.forced_aligner = CTCForcedAligner(blank_id=self.blank_id)
+        
+        if self.mtl_inter_ctc_weight > 0:
+            self.inter_kd_weight = (
+                params.inter_kd_weight
+                if hasattr(params, "inter_kd_weight")
+                else 0
+            )
+
+            if self.inter_kd_weight > 0:
+                self.inter_ctc_kd_loss_fn = CTCAlignDistillLoss(
+                    vocab_size=params.vocab_size,
+                    blank_id=params.blank_id,
+                    lsm_prob=params.lsm_prob,
+                    position=params.kd_ctc_position if hasattr(params, "kd_ctc_position") else "all"
+                )
+                self.reduce_main_loss_kd = params.reduce_main_loss_kd
+                self.forced_aligner = CTCForcedAligner(blank_id=self.blank_id)
 
     def forward(
         self,
@@ -71,8 +89,8 @@ class CTCDecoder(nn.Module):
         eouts_inter=None,
         ys=None,
         ylens=None,
-        ys_in=None,
-        ys_out=None,
+        ys_in=None,  # unused
+        ys_out=None,  # unused
         soft_labels=None,
         ps=None,
         plens=None,
@@ -86,13 +104,25 @@ class CTCDecoder(nn.Module):
             return logits
 
         # NOTE: nn.CTCLoss accepts (T, B, vocab_size) logits
-        loss_ctc = self.ctc_loss(
+        loss_ctc = self.ctc_loss_fn(
             logits.transpose(1, 0).log_softmax(dim=2), ys, elens, ylens
         ) / logits.size(
             0
         )  # NOTE: nomarlize by B
         loss += loss_ctc  # main loss
         loss_dict["loss_ctc"] = loss_ctc
+
+        if self.kd_weight > 0 and soft_labels is not None:
+            log_probs = torch.log_softmax(logits, dim=-1)
+            aligns = self.forced_aligner(log_probs, elens, ys, ylens)
+
+            loss_kd = self.ctc_kd_loss_fn(logits, ys, soft_labels, aligns, elens, ylens)
+            loss_dict["loss_kd"] = loss_kd
+
+            if self.reduce_main_loss_kd:
+                loss = (1 - self.kd_weight) * loss + self.kd_weight * loss_kd
+            else:
+                loss += self.kd_weight * loss_kd
 
         if self.mtl_phone_ctc_weight > 0:
             # for elen, plen in zip(elens, plens):
@@ -104,7 +134,7 @@ class CTCDecoder(nn.Module):
             else:
                 logits_phone = self.phone_output(eouts)  # final layer
 
-            loss_phone_ctc = self.ctc_loss(
+            loss_phone_ctc = self.ctc_loss_fn(
                 logits_phone.transpose(1, 0).log_softmax(dim=2), ps, elens, plens
             ) / logits_phone.size(0)
 
@@ -117,24 +147,25 @@ class CTCDecoder(nn.Module):
 
         if self.mtl_inter_ctc_weight > 0:
             logits_inter = self.output(eouts_inter)
-            loss_inter_ctc = self.ctc_loss(
+            loss_inter_ctc = self.ctc_loss_fn(
                 logits_inter.transpose(1, 0).log_softmax(dim=2), ys, elens, ylens
             ) / logits_inter.size(0)
 
-            loss += self.mtl_inter_ctc_weight * loss_inter_ctc
             loss_dict[f"loss_inter_ctc"] = loss_inter_ctc
+            
+            if self.inter_kd_weight > 0:
+                log_probs_inter = torch.log_softmax(logits_inter, dim=-1)
+                aligns_inter = self.forced_aligner(log_probs_inter, elens, ys, ylens)
 
-        if self.kd_weight > 0 and soft_labels is not None:
-            log_probs = torch.log_softmax(logits, dim=-1)
-            aligns = self.forced_aligner(log_probs, elens, ys, ylens)
+                loss_inter_kd = self.inter_ctc_kd_loss_fn(logits_inter, ys, soft_labels, aligns_inter, elens, ylens)
+                loss_dict["loss_inter_kd"] = loss_inter_kd
 
-            loss_kd = self.ctc_kd_loss(logits, ys, soft_labels, aligns, elens, ylens)
-            loss_dict["loss_kd"] = loss_kd
-
-            if self.reduce_main_loss_kd:
-                loss = (1 - self.kd_weight) * loss + self.kd_weight * loss_kd
+                if self.reduce_main_loss_kd:
+                    loss += self.mtl_inter_ctc_weight * ((1 - self.inter_kd_weight) * loss_inter_ctc + self.inter_kd_weight * loss_inter_kd)
+                else:
+                    loss += self.inter_kd_weight * loss_inter_kd
             else:
-                loss += self.kd_weight * loss_kd
+                loss += self.mtl_inter_ctc_weight * loss_inter_ctc
 
         loss_dict["loss_total"] = loss
 
@@ -193,7 +224,7 @@ class CTCDecoder(nn.Module):
         }
         beams = [beam]
 
-        for t in range(elens[0]):
+        for t in range(eouts.size(1)):
             new_beams = []
 
             _, v_topk = torch.topk(
@@ -277,9 +308,8 @@ class CTCDecoder(nn.Module):
                         }
                     )
 
-                # merge the same hyp
-                new_beams = self._merge_ctc_paths(new_beams)
-
+            # merge the same hyp
+            new_beams = self._merge_ctc_paths(new_beams)
             beams = sorted(new_beams, key=lambda x: x["score"], reverse=True)[
                 :beam_width
             ]
@@ -293,7 +323,7 @@ class CTCDecoder(nn.Module):
         self,
         eouts,
         elens,
-        eouts_inter,
+        eouts_inter=None,
         beam_width=1,
         len_weight=0,
         lm=None,

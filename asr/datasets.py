@@ -65,13 +65,15 @@ class ASRDataset(Dataset):
             self.data = self.data[
                 ["feat_path", "utt_id", "token_id", "text", "xlen", "ylen"]
             ]
+        
+        self.use_kd = params.kd_weight > 0 or (hasattr(params, "inter_kd_weight") and params.inter_kd_weight > 0)
 
-        if self.phase == "train" and params.kd_weight > 0:
+        if self.phase == "train" and self.use_kd:
             with open(params.kd_label_path, "rb") as f:
                 self.data_kd = pickle.load(f)
             logging.info(f"kd labels: {params.kd_label_path}")
 
-            self.add_eos = params.decoder_type == "transformer"
+            self.add_eos = params.decoder_type in ["transformer", "las"]
         else:
             self.data_kd = None
 
