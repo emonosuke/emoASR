@@ -18,7 +18,8 @@ EMOASR_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../")
 sys.path.append(EMOASR_ROOT)
 
 from utils.configure import load_config
-from utils.paths import get_log_save_paths, get_model_optim_paths, rel_to_abs_path
+from utils.paths import (get_log_save_paths, get_model_optim_paths,
+                         rel_to_abs_path)
 from utils.vocab import Vocab
 
 from asr.datasets import ASRBatchSampler, ASRDataset
@@ -51,7 +52,15 @@ def train_step(
         soft_labels = None
 
     loss, loss_dict = model(
-        xs, xlens, ys, ylens, ys_in, ys_out, soft_labels=soft_labels, ps=ps, plens=plens
+        xs=xs,
+        xlens=xlens,
+        ys=ys,
+        ylens=ylens,
+        ys_in=ys_in,
+        ys_out=ys_out,
+        soft_labels=soft_labels,
+        ps=ps,
+        plens=plens,
     )
 
     # reduction for devices
@@ -141,9 +150,9 @@ def valid_step(model, data, device):
     ylens = data["ylens"]
 
     if torch.cuda.device_count() > 1:
-        hyps, *_ = model.module.decode(xs, xlens, beam_width=0, len_weight=0)
+        hyps, *_ = model.module.decode(xs, xlens, beam_width=1, len_weight=0)
     else:
-        hyps, *_ = model.decode(xs, xlens, beam_width=0, len_weight=0)
+        hyps, *_ = model.decode(xs, xlens, beam_width=1, len_weight=0)
 
     refs = [y[:ylen].tolist() for y, ylen in zip(ys, ylens)]
 
@@ -244,7 +253,7 @@ def main(args):
             dataset=dataset,
             batch_sampler=ASRBatchSampler(dataset, params, min_batch_size=num_gpus),
             collate_fn=dataset.collate_fn,
-            num_workers=1,
+            num_workers=args.num_workers,
         )
         logging.info(
             f"{len(dataset):d} samples -> {len(dataloader):d} batches (batch size average: {(len(dataset)/len(dataloader)):.2f})"
@@ -279,6 +288,7 @@ def main(args):
         model.train()
 
         if epoch == 0 or (epoch + 1) % params.save_step == 0:
+            # do not save model in debug mode
             if args.debug:
                 continue
 
@@ -299,6 +309,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--empty_cache", action="store_true")  # unrecommended
+    parser.add_argument("--num_workers", type=int, default=2)
     args = parser.parse_args()
 
     try:

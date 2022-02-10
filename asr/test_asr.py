@@ -21,7 +21,8 @@ from utils.average_checkpoints import model_average
 from utils.configure import load_config
 from utils.converters import ints2str, strip_eos
 from utils.log import insert_comment
-from utils.paths import get_eval_path, get_model_path, get_results_dir, rel_to_abs_path
+from utils.paths import (get_eval_path, get_model_path, get_results_dir,
+                         rel_to_abs_path)
 from utils.vocab import Vocab
 
 from asr.datasets import ASRDataset
@@ -34,12 +35,16 @@ torch.cuda.manual_seed_all(0)
 
 
 def test_step(
-    model, data, beam_width, len_weight, decode_ctc_weight, lm, lm_weight, device
+    model, data, beam_width, len_weight, decode_ctc_weight, decode_phone, lm, lm_weight, device
 ):
     utt_id = data["utt_ids"][0]
     xs = data["xs"].to(device)
     xlens = data["xlens"].to(device)
-    reftext = data["texts"][0]
+
+    if decode_phone:
+        reftext = data["ptexts"][0]
+    else:
+        reftext = data["texts"][0]
 
     hyps, scores, _, _ = model.decode(
         xs,
@@ -49,6 +54,7 @@ def test_step(
         lm=lm,
         lm_weight=lm_weight,
         decode_ctc_weight=decode_ctc_weight,
+        decode_phone=decode_phone
     )
     return utt_id, hyps, scores, reftext
 
@@ -60,6 +66,7 @@ def test(
     beam_width,
     len_weight,
     decode_ctc_weight,
+    decode_phone,
     lm,
     lm_weight,
     device,
@@ -83,6 +90,7 @@ def test(
             beam_width,
             len_weight,
             decode_ctc_weight,
+            decode_phone,
             lm,
             lm_weight,
             device,
@@ -95,7 +103,6 @@ def test(
                 text = vocab.ids2text(strip_eos(hyp, eos_id))
                 rows.append([utt_id, score, token_id, text, reftext])
 
-            # for debug
             text = vocab.ids2text(strip_eos(hyps[0], eos_id))
         else:
             if len(hyps) < 1:
@@ -202,7 +209,7 @@ def test_main(args, lm_weight=None, len_weight=None):
     if data_path is None:
         data_path = params.test_path
     logging.info(f"test data: {data_path}")
-    dataset = ASRDataset(params, rel_to_abs_path(data_path), phase="test")
+    dataset = ASRDataset(params, rel_to_abs_path(data_path), phase="test", decode_phone=args.decode_phone)
     dataloader = DataLoader(
         dataset=dataset,
         batch_size=1,
@@ -210,7 +217,10 @@ def test_main(args, lm_weight=None, len_weight=None):
         collate_fn=dataset.collate_fn,
         num_workers=0,
     )
-    vocab = Vocab(rel_to_abs_path(params.vocab_path))
+    if args.decode_phone:
+        vocab = Vocab(rel_to_abs_path(params.phone_vocab_path), no_subword=True)
+    else:
+        vocab = Vocab(rel_to_abs_path(params.vocab_path))
 
     if args.runtime:
         torch.set_num_threads(1)
@@ -225,6 +235,7 @@ def test_main(args, lm_weight=None, len_weight=None):
                 beam_width,
                 len_weight,
                 decode_ctc_weight,
+                args.decode_phone,
                 lm,
                 lm_weight,
                 device,
@@ -247,6 +258,8 @@ def test_main(args, lm_weight=None, len_weight=None):
             results_dir = os.path.join(results_dir, args.save_dir)
         os.makedirs(results_dir, exist_ok=True)
         result_file = f"result_{data_tag}_beam{beam_width:d}_len{len_weight:.1f}_ctc{decode_ctc_weight:.1f}_lm{lm_weight:.2f}{lm_tag}_ep{args.ep}.tsv"
+        if args.decode_phone:
+            result_file = result_file.replace(".tsv", "_phone.tsv")
         if args.nbest:
             result_file = result_file.replace(".tsv", "_nbest.tsv")
         result_path = os.path.join(results_dir, result_file)
@@ -261,6 +274,7 @@ def test_main(args, lm_weight=None, len_weight=None):
         beam_width,
         len_weight,
         decode_ctc_weight,
+        args.decode_phone,
         lm,
         lm_weight,
         device,
@@ -281,17 +295,16 @@ def test_main(args, lm_weight=None, len_weight=None):
 
         if not args.nbest:
             wer, wer_dict = compute_wers_df(data)
-            wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
+            if args.decode_phone:
+                wer_info = f"PER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
+            else:
+                wer_info = f"WER: {wer:.2f} [D={wer_dict['n_del']:d}, S={wer_dict['n_sub']:d}, I={wer_dict['n_ins']:d}, N={wer_dict['n_ref']:d}]"
             logging.info(wer_info)
             insert_comment(result_path, wer_info)
 
             return lm_weight, len_weight, wer, wer_info
 
         # TODO: calculate oracle when args.nbest
-
-
-def main(args):
-    test_main(args)
 
 
 if __name__ == "__main__":
@@ -316,7 +329,6 @@ if __name__ == "__main__":
     parser.add_argument("--lm_conf", type=str, default=None)
     parser.add_argument("--lm_ep", type=str, default=None)
     parser.add_argument("--lm_tag", type=str, default=None)
-    # TODO
     parser.add_argument("--decode_phone", action="store_true")
     args = parser.parse_args()
 
