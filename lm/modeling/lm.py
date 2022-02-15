@@ -30,9 +30,9 @@ class LM(nn.Module):
             self.lm = BERTMaskedLM(params)
         elif self.lm_type == "transformer":
             self.lm = TransformerLM(params)
-        elif self.lm_type == "electra":
+        elif self.lm_type in ["electra", "electra-disc"]:
             self.lm = ELECTRAModel(params)
-        elif self.lm_type == "pelectra":
+        elif self.lm_type in ["pelectra", "pelectra-disc"]:
             self.lm = PELECTRAModel(params)
         elif self.lm_type == "rnn":
             self.lm = RNNLM(params)
@@ -45,11 +45,19 @@ class LM(nn.Module):
     def forward(self, ys, ylens=None, labels=None, ps=None, plens=None):
         return self.lm(ys, ylens, labels, ps, plens)
 
+    def forward_disc(self, ys, ylens, error_labels):
+        return self.lm.forward_disc(ys, ylens, error_labels)
+    
+    def zero_states(self, bs, device):
+        return self.lm.zero_states(bs, device)
+
     def predict(self, ys, ylens, states=None):
-        return self.lm.predict(ys, ylens, states)
+        with torch.no_grad():
+            return self.lm.predict(ys, ylens, states)
 
     def score(self, ys, ylens, batch_size=100):
-        return self.lm.score(ys, ylens, batch_size)
+        with torch.no_grad():
+            return self.lm.score(ys, ylens, batch_size)
 
     def load_state_dict(self, state_dict):
         try:

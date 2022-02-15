@@ -60,6 +60,7 @@ class CTCDecoder(nn.Module):
                 vocab_size=params.vocab_size,
                 blank_id=params.blank_id,
                 lsm_prob=params.lsm_prob,
+                soft_label_weight=params.kd_ctc_soft_label_weight if hasattr(params, "kd_ctc_soft_label_weight") else 1.0,
                 position=params.kd_ctc_position if hasattr(params, "kd_ctc_position") else "all"
             )
             self.reduce_main_loss_kd = params.reduce_main_loss_kd
@@ -77,6 +78,7 @@ class CTCDecoder(nn.Module):
                     vocab_size=params.vocab_size,
                     blank_id=params.blank_id,
                     lsm_prob=params.lsm_prob,
+                    soft_label_weight=params.kd_ctc_soft_label_weight if hasattr(params, "kd_ctc_soft_label_weight") else 1.0,
                     position=params.kd_ctc_position if hasattr(params, "kd_ctc_position") else "all"
                 )
                 self.reduce_main_loss_kd = params.reduce_main_loss_kd
@@ -221,6 +223,7 @@ class CTCDecoder(nn.Module):
             "score_asr": 0.0,
             "score_lm": 0.0,
             "score_len": 0.0,
+            "lm_states": None if lm is None else lm.zero_states(bs, eouts.device),
         }
         beams = [beam]
 
@@ -244,8 +247,16 @@ class CTCDecoder(nn.Module):
                 hyp_lens_batch = torch.tensor(
                     [len(beam["hyp"]) for beam in beams], device=eouts.device
                 )
-                lm_log_prob_batch, _ = lm.predict(
-                    hyps_batch, hyp_lens_batch, states=None
+
+                if beams[0]["lm_states"] is None:
+                    lm_states_batch = None
+                else:
+                    hstate_batch = torch.cat([beam["lm_states"][0] for beam in beams], dim=1)
+                    cstate_batch = torch.cat([beam["lm_states"][1] for beam in beams], dim=1)
+                    lm_states_batch = (hstate_batch, cstate_batch)
+
+                lm_log_prob_batch, new_lm_states_batch = lm.predict(
+                    hyps_batch, hyp_lens_batch, states=lm_states_batch
                 )
 
             for b, beam in enumerate(beams):
@@ -255,6 +266,7 @@ class CTCDecoder(nn.Module):
                 score_asr = beam["score_asr"]
                 score_lm = beam["score_lm"]
                 score_len = beam["score_len"]
+                lm_states = beam["lm_states"]
 
                 # case 1. hyp is not extended (copy the last)
                 new_p_b = np.logaddexp(
@@ -276,6 +288,7 @@ class CTCDecoder(nn.Module):
                         "score_asr": score_asr,
                         "score_lm": score_lm,
                         "score_len": score_len,
+                        "lm_states": lm_states  # do not update LM states
                     }
                 )
 
@@ -296,6 +309,16 @@ class CTCDecoder(nn.Module):
                     if lm_weight > 0:
                         score_lm += lm_weight * lm_log_prob_batch[b, v].item()
 
+                    if lm_weight > 0:
+                        if new_lm_states_batch is None:
+                            new_lm_states = None
+                        else:
+                            hstate = new_lm_states_batch[0][:, b : b + 1]
+                            cstate = new_lm_states_batch[1][:, b : b + 1]
+                            new_lm_states = (hstate, cstate)
+                    else:
+                        new_lm_states = None
+
                     new_beams.append(
                         {
                             "hyp": hyp + [v],
@@ -305,6 +328,7 @@ class CTCDecoder(nn.Module):
                             "score_asr": score_asr,
                             "score_lm": score_lm,
                             "score_len": score_len,
+                            "lm_states": new_lm_states  # update LM states
                         }
                     )
 

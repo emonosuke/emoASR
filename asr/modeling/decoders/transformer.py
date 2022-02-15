@@ -24,14 +24,13 @@ CTC_BEAM_WIDTH_RATIO = 1.5
 
 class TransformerDecoder(nn.Module):
     def __init__(self, params, cmlm=False):
-        super(TransformerDecoder, self).__init__()
+        super().__init__()
 
         self.vocab_size = params.vocab_size
         self.embed = nn.Embedding(self.vocab_size, params.dec_hidden_size)
         self.pe = PositionalEncoder(params.dec_hidden_size, params.dropout_dec_rate)
         self.dec_num_layers = params.dec_num_layers
 
-        # TODO: rename to `decoders`
         self.transformers = nn.ModuleList()
         for _ in range(self.dec_num_layers):
             self.transformers += [
@@ -47,8 +46,6 @@ class TransformerDecoder(nn.Module):
         self.mtl_ctc_weight = params.mtl_ctc_weight
         if self.mtl_ctc_weight > 0:
             self.ctc = CTCDecoder(params)
-        if hasattr(params, "mtl_ctc_add_sos_eos"):
-            self.mtl_ctc_add_sos_eos = params.mtl_ctc_add_sos_eos
 
         # normalize before
         # TODO: set `eps` to 1e-5 (default)
@@ -71,12 +68,13 @@ class TransformerDecoder(nn.Module):
         if self.kd_weight > 0:
             self.loss_fn = DistillLoss(
                 vocab_size=self.vocab_size,
-                soft_label_weight=params.kd_weight,
+                soft_label_weight=self.kd_weight,
                 lsm_prob=params.lsm_prob,
                 normalize_length=params.loss_normalize_length,
                 normalize_batch=params.loss_normalize_batch,
             )
 
+        # TODO: optional
         self.blank_id = params.blank_id
         self.eos_id = params.eos_id
         self.max_decode_ylen = params.max_decode_ylen
@@ -136,9 +134,6 @@ class TransformerDecoder(nn.Module):
             loss_dict["loss_att"] = loss_att
 
         if self.mtl_ctc_weight > 0:
-            if self.mtl_ctc_add_sos_eos:
-                ys, ylens = add_sos_eos(ys, ylens, eos_id=self.eos_id)
-
             # NOTE: KD is not applied to auxiliary CTC
             loss_ctc, _, _ = self.ctc(
                 eouts=eouts, elens=elens, ys=ys, ylens=ylens, soft_labels=None
@@ -192,7 +187,7 @@ class TransformerDecoder(nn.Module):
             "score_ctc": 0.0,
             "ctc_state": None,
             "score_lm": 0.0,
-            "lm_state": None,
+            "lm_states": None if lm is None else lm.zero_states(bs, eouts.device),
         }
         if decode_ctc_weight > 0:
             ctc_logits = self.ctc(eouts, elens)
@@ -225,8 +220,8 @@ class TransformerDecoder(nn.Module):
                 scores = scores_att
 
                 if lm_weight > 0:
-                    scores_lm, _ = lm.predict(
-                        ys_in, ylens_in, states=None
+                    scores_lm, new_lm_states = lm.predict(
+                        ys_in, ylens_in, states=beam["lm_states"]
                     )  # (1, vocab)
                     scores += lm_weight * scores_lm[:, : self.vocab_size]
 
@@ -235,12 +230,14 @@ class TransformerDecoder(nn.Module):
                     ctc_state_prev = beam["ctc_state"]
                     scores_topb, v_topb = torch.topk(scores, k=ctc_beam_width, dim=1)
                     scores_ctc, ctc_state = ctc_scorer(
-                        beam["hyp"], v_topb[0], ctc_state_prev
+                        beam["hyp"], tensor2np(v_topb[0]), ctc_state_prev
                     )
                     # re-calculate score
                     scores = (1 - decode_ctc_weight) * scores_att[
                         :, v_topb[0]
-                    ] + decode_ctc_weight * np2tensor(scores_ctc - score_ctc_prev)
+                    ] + decode_ctc_weight * np2tensor(
+                        scores_ctc - score_ctc_prev, device=scores_att.device
+                    )
                     if lm_weight > 0:
                         scores += lm_weight * scores_lm[:, v_topb[0]]
                     scores_topk, ids_topk = torch.topk(scores, k=beam_width, dim=1)
@@ -252,6 +249,8 @@ class TransformerDecoder(nn.Module):
                     new_beam = {}
                     new_beam["score"] = beam["score"] + float(scores_topk[0, j])
                     new_beam["hyp"] = beam["hyp"] + [int(v_topk[0, j])]
+                    if lm_weight > 0:
+                        new_beam["lm_states"] = new_lm_states
                     if decode_ctc_weight > 0:
                         new_beam["score_ctc"] = scores_ctc[ids_topk[0, j]]
                         new_beam["ctc_state"] = ctc_state[ids_topk[0, j]]

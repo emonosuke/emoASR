@@ -54,6 +54,10 @@ class TransformerLM(nn.Module):
         loss_dict = {"loss_total": loss}
 
         return loss, loss_dict
+    
+    def zero_states(self, bs, device):
+        # Transformer LM is stateless
+        return None
 
     def predict(self, ys, ylens, states=None):
         """ predict next token for Shallow Fusion
