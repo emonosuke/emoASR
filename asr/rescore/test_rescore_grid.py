@@ -4,6 +4,7 @@
 import argparse
 import logging
 import os
+import re
 import sys
 import time
 
@@ -31,13 +32,15 @@ def score_lm(df, model, device, mask_id=None, vocab=None, num_samples=-1):
 
     utt_id = None
     cnt_utts = 0
+    utt_ids = []
 
     for i, row in enumerate(df.itertuples()):
         if row.utt_id != utt_id:
             cnt_utts += 1
             utt_id = row.utt_id
+            utt_ids.append(utt_id)
         if num_samples > 0 and (cnt_utts + 1) > num_samples:
-            return
+            return utt_ids
 
         y = str2ints(row.token_id)
         ys.append(torch.tensor(y))
@@ -119,19 +122,26 @@ def main(args):
 
         global BATCH_SIZE
         BATCH_SIZE = 1
-        runtimes = []
 
+        runtimes = []
+        rtfs = []
         for j in range(args.runtime_num_repeats):
             start_time = time.time()
 
-            score_lm(df, lm, device, mask_id=mask_id, num_samples=args.runtime_num_samples)
-            
+            utt_ids = score_lm(df, lm, device, mask_id=mask_id, num_samples=args.runtime_num_samples)
             runtime = time.time() - start_time
-            runtime /= args.runtime_num_samples
-            logging.info(f"Run {(j+1):d} runtime: {runtime:.5f}sec / utt")
+            runtime_utt = runtime / args.runtime_num_samples
+            wavtime = 0
+            for utt_id in utt_ids:
+                start_time = int(re.split("_|-", utt_id)[-2]) / args.wavtime_factor
+                end_time = int(re.split("_|-", utt_id)[-1]) / args.wavtime_factor
+                wavtime += (end_time - start_time)
+            rtf = runtime / wavtime
+            logging.info(f"Run {(j+1):d} runtime: {runtime:.5f}sec / utt, wavtime: {wavtime:.5f}sec | RTF: {(rtf):.5f}")
             runtimes.append(runtime)
+            rtfs.append(rtf)
 
-        logging.info(f"Average runtime {np.mean(runtimes):.5f}sec on {device.type}")
+        logging.info(f"Averaged runtime {np.mean(runtimes):.5f}sec, RTF {np.mean(rtfs):.5f} on {device.type}")
         return
     
     scored_tsv_path = args.tsv_path.replace(".tsv", f"_{lm_tag}.tsv")
@@ -188,6 +198,7 @@ if __name__ == "__main__":
     parser.add_argument("--runtime", action="store_true")
     parser.add_argument("--runtime_num_samples", type=int, default=20)
     parser.add_argument("--runtime_num_repeats", type=int, default=5)
+    parser.add_argument("--wavtime_factor", type=float, default=1000)
     #
     parser.add_argument("-lm_conf", type=str, required=True)
     parser.add_argument("-lm_ep", type=str, required=True)

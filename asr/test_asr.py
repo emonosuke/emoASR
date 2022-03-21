@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import re
 import socket
 import sys
 import time
@@ -226,9 +227,10 @@ def test_main(args, lm_weight=None, len_weight=None):
         torch.set_num_threads(1)
 
         runtimes = []
+        rtfs = []
         for j in range(args.runtime_num_repeats):
             start_time = time.time()
-            test(
+            results = test(
                 model,
                 dataloader,
                 vocab,
@@ -245,11 +247,19 @@ def test_main(args, lm_weight=None, len_weight=None):
                 nbest=args.nbest,
             )
             runtime = time.time() - start_time
-            runtime /= args.runtime_num_samples
-            logging.info(f"Run {(j+1):d} runtime: {runtime:.5f}sec / utt")
-            runtimes.append(runtime)
+            runtime_utt = runtime / args.runtime_num_samples
+            utt_ids = [result[0] for result in results]
+            wavtime = 0
+            for utt_id in utt_ids:
+                start_time = int(re.split("_|-", utt_id)[-2]) / args.wavtime_factor
+                end_time = int(re.split("_|-", utt_id)[-1]) / args.wavtime_factor
+                wavtime += (end_time - start_time)
+            rtf = runtime / wavtime
+            logging.info(f"Run {(j+1):d} | runtime: {runtime_utt:.5f}sec / utt, wavtime: {wavtime:.5f}sec | RTF: {(rtf):.5f}")
+            runtimes.append(runtime_utt)
+            rtfs.append(rtf)
 
-        logging.info(f"Averaged runtime {np.mean(runtimes):.5f}sec on {device.type}")
+        logging.info(f"Averaged runtime {np.mean(runtimes):.5f}sec, RTF {np.mean(rtfs):.5f} on {device.type}")
         return
 
     if args.utt_id is None:
@@ -321,6 +331,7 @@ if __name__ == "__main__":
     parser.add_argument("--runtime", action="store_true")  # measure runtime mode
     parser.add_argument("--runtime_num_samples", type=int, default=20)
     parser.add_argument("--runtime_num_repeats", type=int, default=5)
+    parser.add_argument("--wavtime_factor", type=float, default=1000)
     #
     parser.add_argument("--beam_width", type=int, default=None)
     parser.add_argument("--len_weight", type=float, default=None)

@@ -3,6 +3,7 @@
 import argparse
 import logging
 import os
+import re
 import socket
 import sys
 import time
@@ -22,7 +23,8 @@ from utils.average_checkpoints import model_average
 from utils.configure import load_config
 from utils.converters import ints2str, np2tensor, tensor2np
 from utils.log import insert_comment, print_topk_probs
-from utils.paths import get_eval_path, get_model_path, get_results_dir, rel_to_abs_path
+from utils.paths import (get_eval_path, get_model_path, get_results_dir,
+                         rel_to_abs_path)
 from utils.vocab import Vocab
 
 from asr.datasets import ASRDataset
@@ -77,11 +79,15 @@ def test_step(
     blank_id,
     mask_id,
     mask_th,
+    phone_mask_th,
     device,
     vocab,
     vocab_size,
     vocab_phone=None,
     debug=False,
+    pad_id=0,
+    cascade_ctc=False,
+    phone_mask_id=None,
 ):
     utt_id = data["utt_ids"][0]
     xs = data["xs"].to(device)
@@ -89,7 +95,7 @@ def test_step(
     reftext = data["texts"][0]
 
     # ASR (word)
-    hyps, scores, logits, aligns = model.decode(xs, xlens, beam_width=0, len_weight=0)
+    hyps, _, logits, aligns = model.decode(xs, xlens, beam_width=0, len_weight=0)
     hyp = np.array(hyps[0])
 
     if len(hyp) < 1:
@@ -97,7 +103,7 @@ def test_step(
 
     # ASR (phone)
     if vocab_phone is not None:
-        hyps_phone, _, _, _ = model.decode(
+        hyps_phone, _, logits_phone, aligns_phone = model.decode(
             xs, xlens, beam_width=0, len_weight=0, decode_phone=True
         )
         hyp_phone = np.array(hyps_phone[0])
@@ -105,37 +111,57 @@ def test_step(
         if len(hyp_phone) < 1:
             return utt_id, [], [], reftext, 0, 0
 
-    hyp_masked = hyp.copy()
-    token_probs, token_probs_v = aggregate_logits(logits[0], aligns[0], blank_id)
-    assert len(hyp) == len(token_probs)
-    assert len(hyp) == len(token_probs_v)
-
-    # mask less confident tokens
-    mask_indices = token_probs_v < mask_th
-    hyp_masked[mask_indices] = mask_id
-
-    num_masked = sum(mask_indices)
-    num_tokens = len(mask_indices)
-
-    y = np2tensor(hyp_masked)
-
-    if vocab_phone is None:
-        logits = lm(y.unsqueeze(0).to(device))
+    # mask less confident phones
+    if phone_mask_th > 0:
+        assert phone_mask_id is not None
+        phone_probs, phone_probs_v = aggregate_logits(
+            logits_phone[0], aligns_phone[0], blank_id
+        )
+        assert len(hyp_phone) == len(phone_probs)
+        assert len(hyp_phone) == len(phone_probs_v)
+        phone_mask_indices = phone_probs_v < phone_mask_th
+        hyp_phone[phone_mask_indices] = phone_mask_id
+    
+    if cascade_ctc:
+        p = np2tensor(hyp_phone, device=device)
+        hyp_cor = lm.decode(ps=p.unsqueeze(0))[0]
+        hyp_masked = None
+        num_masked = 0
+        num_tokens = 0
     else:
-        p = np2tensor(hyp_phone)
-        logits = lm(y.unsqueeze(0).to(device), ps=p.unsqueeze(0).to(device))
+        hyp_masked = hyp.copy()
+        token_probs, token_probs_v = aggregate_logits(logits[0], aligns[0], blank_id)
+        assert len(hyp) == len(token_probs)
+        assert len(hyp) == len(token_probs_v)
 
-    lm_token_probs = tensor2np(torch.softmax(logits[0], dim=-1))
+        # mask less confident tokens
+        mask_indices = token_probs_v < mask_th
+        hyp_masked[mask_indices] = mask_id
 
-    # fusion
-    token_probs_mix = (1 - args.lm_weight) * token_probs[
-        :, :vocab_size
-    ] + args.lm_weight * lm_token_probs[:, :vocab_size]
+        num_masked = sum(mask_indices)
+        num_tokens = len(mask_indices)
 
-    y_gen = np.argmax(token_probs_mix, axis=-1)
+        y = np2tensor(hyp_masked, device=device)
 
-    hyp_cor = hyp.copy()
-    hyp_cor[mask_indices] = y_gen[mask_indices]
+        if vocab_phone is None:
+            logits = lm(y.unsqueeze(0).to(device))
+        else:
+            p = np2tensor(hyp_phone, device=device)
+            logits = lm(y.unsqueeze(0).to(device), ps=p.unsqueeze(0).to(device))
+
+        lm_token_probs = tensor2np(torch.softmax(logits[0], dim=-1))
+
+        # fusion
+        token_probs_mix = (1 - args.lm_weight) * token_probs[
+            :, :vocab_size
+        ] + args.lm_weight * lm_token_probs[:, :vocab_size]
+
+        y_gen = np.argmax(token_probs_mix, axis=-1)
+
+        hyp_cor = hyp.copy()
+        hyp_cor[mask_indices] = y_gen[mask_indices]
+        # remove padding
+        hyp_cor = [x for x in filter(lambda x: x != pad_id, hyp_cor)]
 
     if debug:
         print(f"*** {utt_id} ***")
@@ -143,15 +169,16 @@ def test_step(
         print(f"Hyp.(word): {' '.join(vocab.ids2tokens(hyp))}")
         if vocab_phone is not None:
             print(f"Hyp.(phone): {' '.join(vocab_phone.ids2tokens(hyp_phone))}")
-        print(
-            f"Hyp.(masked): {' '.join(vocab.ids2tokens(hyp_masked))} ({num_masked:d}/{num_tokens:d} masked)"
-        )
-        print("ASR probs:")
-        token_probs_masked = token_probs[mask_indices]
-        print_topk_probs(token_probs_masked, vocab=vocab)
-        print("LM probs:")
-        lm_token_probs_masked = lm_token_probs[mask_indices]
-        print_topk_probs(lm_token_probs_masked, vocab=vocab)
+        if not cascade_ctc:
+            print(
+                f"Hyp.(masked): {' '.join(vocab.ids2tokens(hyp_masked))} ({num_masked:d}/{num_tokens:d} masked)"
+            )
+            print("ASR probs:")
+            token_probs_masked = token_probs[mask_indices]
+            print_topk_probs(token_probs_masked, vocab=vocab)
+            print("LM probs:")
+            lm_token_probs_masked = lm_token_probs[mask_indices]
+            print_topk_probs(lm_token_probs_masked, vocab=vocab)
         print(f"Hyp.(correct): {' '.join(vocab.ids2tokens(hyp_cor))}")
 
     return utt_id, hyp, hyp_cor, reftext, num_masked, num_tokens
@@ -167,9 +194,12 @@ def test(
     blank_id,
     mask_id,
     mask_th,
+    phone_mask_th,
     vocab_phone=None,
     debug=False,
     num_samples=-1,
+    cascade_ctc=False,
+    phone_mask_id=None
 ):
     rows = []  # utt_id, token_id, text, reftext
 
@@ -186,11 +216,14 @@ def test(
             blank_id,
             mask_id,
             mask_th,
+            phone_mask_th,
             device,
             vocab,
             vocab_size,
             vocab_phone=vocab_phone,
             debug=debug,
+            cascade_ctc=cascade_ctc,
+            phone_mask_id=phone_mask_id
         )
         text = ""
         num_masked_all += num_masked
@@ -213,7 +246,9 @@ def test(
     return rows
 
 
-def main(args):
+def test_main(args, lm_weight=None, mask_th=None):
+    if lm_weight is not None and mask_th is not None:
+        logging.info(f"*** lm_weight: {lm_weight:.2f} mask_th {len_weight:.2f}")
     if args.cpu:
         device = torch.device("cpu")
         torch.set_num_threads(1)
@@ -250,14 +285,14 @@ def main(args):
 
     # LM
     lm_params = load_config(args.lm_conf)
-    assert lm_params.lm_type in ["bert", "pbert"]
+    assert lm_params.lm_type in ["bert", "pbert", "pctc"]
     lm_path = get_model_path(args.lm_conf, args.lm_ep)
     logging.info(f"LM: {lm_path}")
     lm_tag = lm_params.lm_type if args.lm_tag is None else args.lm_tag
 
     if lm_params.lm_type == "bert":
         lm = LM(lm_params, phase="test")
-    elif lm_params.lm_type == "pbert":
+    elif lm_params.lm_type in ["pbert", "pctc"]:
         lm = P2W(lm_params, phase="test")
 
     lm.load_state_dict(torch.load(lm_path, map_location=device))
@@ -283,7 +318,7 @@ def main(args):
     )
 
     vocab = Vocab(rel_to_abs_path(params.vocab_path))
-    if lm_params.lm_type == "pbert":
+    if lm_params.lm_type in ["pbert", "pctc"]:
         vocab_phone = Vocab(rel_to_abs_path(params.phone_vocab_path))
     else:
         vocab_phone = None
@@ -292,9 +327,10 @@ def main(args):
         torch.set_num_threads(1)
 
         runtimes = []
+        rtfs = []
         for j in range(args.runtime_num_repeats):
             start_time = time.time()
-            test(
+            results = test(
                 model,
                 lm,
                 dataloader,
@@ -302,17 +338,28 @@ def main(args):
                 params.vocab_size,
                 device,
                 params.blank_id,
-                lm_params.mask_id,
+                mask_id=lm_params.mask_id,
                 mask_th=args.mask_th,
+                phone_mask_th=args.phone_mask_th,
                 vocab_phone=vocab_phone,
                 num_samples=args.runtime_num_samples,
+                cascade_ctc=(lm_params.lm_type == "pctc"),
+                phone_mask_id=lm_params.phone_mask_id if hasattr(lm_params, "phone_mask_id") else None,
             )
             runtime = time.time() - start_time
-            runtime /= args.runtime_num_samples
-            logging.info(f"Run {(j+1):d} runtime: {runtime:.5f}sec / utt")
+            runtime_utt = runtime / args.runtime_num_samples
+            utt_ids = [result[0] for result in results]
+            wavtime = 0
+            for utt_id in utt_ids:
+                start_time = int(re.split("_|-", utt_id)[-2]) / args.wavtime_factor
+                end_time = int(re.split("_|-", utt_id)[-1]) / args.wavtime_factor
+                wavtime += (end_time - start_time)
+            rtf = runtime / wavtime
+            logging.info(f"Run {(j+1):d} | runtime: {runtime_utt:.5f}sec / utt, wavtime {wavtime:.5f}sec | RTF: {(rtf):.5f}")
             runtimes.append(runtime)
+            rtfs.append(rtf)
 
-        logging.info(f"Averaged runtime {np.mean(runtimes):.5f}sec on {device.type}")
+        logging.info(f"Averaged runtime {np.mean(runtimes):.5f}sec, RTF {np.mean(rtfs):.5f} on {device.type}")
         return
 
     results = test(
@@ -323,15 +370,18 @@ def main(args):
         params.vocab_size,
         device,
         params.blank_id,
-        lm_params.mask_id,
+        mask_id=lm_params.mask_id,
         mask_th=args.mask_th,
+        phone_mask_th=args.phone_mask_th,
         vocab_phone=vocab_phone,
         debug=args.debug,
+        cascade_ctc=(lm_params.lm_type == "pctc"),
+        phone_mask_id=lm_params.phone_mask_id if hasattr(lm_params, "phone_mask_id") else None
     )
 
     results_dir = get_results_dir(args.conf)
     os.makedirs(results_dir, exist_ok=True)
-    result_file = f"result_{data_tag}_{lm_tag}_corr{args.lm_weight}_maskth{args.mask_th}_ep{args.ep}.tsv"
+    result_file = f"result_{data_tag}_{lm_tag}_corr{args.lm_weight}_maskth{args.mask_th}_pmaskth{args.phone_mask_th}_ep{args.ep}.tsv"
     result_path = os.path.join(results_dir, result_file)
     logging.info(f"result: {result_path}")
     if os.path.exists(result_path):
@@ -348,6 +398,10 @@ def main(args):
     return wer, wer_info
 
 
+def main(args):
+    test_main(args)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-conf", type=str, required=True)
@@ -356,6 +410,7 @@ if __name__ == "__main__":
     parser.add_argument("-lm_ep", type=str, required=True)
     parser.add_argument("--lm_weight", type=float, default=1)
     parser.add_argument("--mask_th", type=float, default=0.9)
+    parser.add_argument("--phone_mask_th", type=float, default=-1)
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--data_tag", type=str, default="test")
@@ -364,10 +419,11 @@ if __name__ == "__main__":
     parser.add_argument("--runtime", action="store_true")  # measure runtime mode
     parser.add_argument("--runtime_num_samples", type=int, default=20)
     parser.add_argument("--runtime_num_repeats", type=int, default=5)
+    parser.add_argument("--wavtime_factor", type=float, default=1000)
     args = parser.parse_args()
 
     try:
-        main(args)
+        test_main(args)
     except:
         logging.error("***** ERROR occurs in testing *****", exc_info=True)
         logging.error("**********")
