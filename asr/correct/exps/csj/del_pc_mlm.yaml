@@ -1,0 +1,62 @@
+lm_type: "pbert"
+lr_schedule_type: "noam"
+
+# model
+input_layer: "embed"
+enc_hidden_size: 256
+enc_num_attention_heads: 4
+enc_num_layers: 4
+enc_intermediate_size: 1024
+dec_hidden_size: 256
+dec_num_attention_heads: 4
+dec_num_layers: 4
+dec_intermediate_size: 1024
+dropout_enc_rate: 0.1
+dropout_dec_rate: 0.1
+dropout_attn_rate: 0.1
+mtl_ctc_weight: 0
+lsm_prob: 0
+kd_weight: 0
+max_decode_ylen: 256
+
+text_augment: true
+textaug_max_mask_prob: 0.4
+textaug_max_replace_prob: 0
+
+# data
+vocab_size: 10872
+src_vocab_size: 45
+max_seq_len: 256
+eos_id: 2
+mask_id: 10871
+phone_eos_id: 2
+phone_mask_id: 43
+blank_id: 0
+train_path: "corpora/csj/nsp10k/data/train_nodev_aps_p2w_sorted.tsv"
+train_size: 154446
+add_sos_eos: false
+dev_path: "corpora/csj/nsp10k/data/dev_500.tsv"
+test_path: "corpora/csj/nsp10k/data/eval1_p2w.tsv"
+vocab_path: "corpora/csj/nsp10k/data/orig/vocab.txt"
+bucket_shuffle: true
+
+model_path: ""
+optim_path: ""
+startep: 0
+log_step: 100
+save_step: 1
+
+# train
+batch_size: 100
+num_epochs: 100
+max_plens_batch: 20000
+max_ylens_batch: 10000
+learning_rate: 5.0
+warmup_proportion: 0.1
+weight_decay: 0.01
+clip_grad_norm: 5.0
+mask_proportion: 0.3
+random_num_to_mask: true
+mask_insert_poisson_lam: 0.2
+accum_grad: 1
+weight_tying: false

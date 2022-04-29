@@ -1,0 +1,66 @@
+encoder_type: "transformer"
+decoder_type: "ctc"
+lr_schedule_type: "noam"
+
+# frontend
+input_layer: "conv2d"
+feat_dim: 80
+num_framestacks: 1
+spec_augment: true
+max_mask_freq: 30
+max_mask_time: 40
+num_masks_freq: 2
+num_masks_time: 2
+replace_with_zero: true
+
+# model
+enc_hidden_size: 256
+enc_num_attention_heads: 4
+enc_num_layers: 12
+enc_intermediate_size: 2048
+
+# data
+blank_id: 0
+eos_id: 2
+phone_eos_id: 2
+vocab_path: "corpora/csj/nsp10k/data/orig/vocab.txt"
+phone_vocab_path: "corpora/csj/nsp10k/data/orig/vocab_phone.txt"
+vocab_size: 10872
+phone_vocab_size: 43
+train_path: "corpora/csj/nsp10k/data/train_nodev_sps_sorted_p2w_ctc.tsv"
+dev_path: "corpora/csj/nsp10k/data/dev_500.tsv"
+test_path: "corpora/csj/nsp10k/data/eval1.tsv"
+train_data_shuffle: true
+
+model_path: ""
+optim_path: ""
+startep: 0
+log_step: 100
+save_step: 1
+
+# train
+batch_size: 50
+max_xlens_batch: 30000
+max_ylens_batch: 3000
+num_epochs: 100
+learning_rate: 5.0
+num_warmup_steps: 25000
+clip_grad_norm: 5.0
+dropout_enc_rate: 0.1
+dropout_attn_rate: 0.1
+weight_decay: 0.000001
+accum_grad: 5
+lsm_prob: 0
+kd_weight: 0
+
+# MTL
+mtl_phone_ctc_weight: 0.3
+hie_mtl_phone: true
+inter_ctc_layer_id: 6
+mtl_inter_ctc_weight: 0
+
+# decode
+beam_width: 0
+len_weight: 0
+decode_ctc_weight: 0
+lm_weight: 0
