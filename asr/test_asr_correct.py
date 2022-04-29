@@ -79,7 +79,6 @@ def test_step(
     blank_id,
     mask_id,
     mask_th,
-    phone_mask_th,
     device,
     vocab,
     vocab_size,
@@ -110,17 +109,6 @@ def test_step(
 
         if len(hyp_phone) < 1:
             return utt_id, [], [], reftext, 0, 0
-
-    # mask less confident phones
-    if phone_mask_th > 0:
-        assert phone_mask_id is not None
-        phone_probs, phone_probs_v = aggregate_logits(
-            logits_phone[0], aligns_phone[0], blank_id
-        )
-        assert len(hyp_phone) == len(phone_probs)
-        assert len(hyp_phone) == len(phone_probs_v)
-        phone_mask_indices = phone_probs_v < phone_mask_th
-        hyp_phone[phone_mask_indices] = phone_mask_id
     
     if cascade_ctc:
         p = np2tensor(hyp_phone, device=device)
@@ -194,7 +182,6 @@ def test(
     blank_id,
     mask_id,
     mask_th,
-    phone_mask_th,
     vocab_phone=None,
     debug=False,
     num_samples=-1,
@@ -216,7 +203,6 @@ def test(
             blank_id,
             mask_id,
             mask_th,
-            phone_mask_th,
             device,
             vocab,
             vocab_size,
@@ -340,7 +326,6 @@ def test_main(args, lm_weight=None, mask_th=None):
                 params.blank_id,
                 mask_id=lm_params.mask_id,
                 mask_th=args.mask_th,
-                phone_mask_th=args.phone_mask_th,
                 vocab_phone=vocab_phone,
                 num_samples=args.runtime_num_samples,
                 cascade_ctc=(lm_params.lm_type == "pctc"),
@@ -372,7 +357,6 @@ def test_main(args, lm_weight=None, mask_th=None):
         params.blank_id,
         mask_id=lm_params.mask_id,
         mask_th=args.mask_th,
-        phone_mask_th=args.phone_mask_th,
         vocab_phone=vocab_phone,
         debug=args.debug,
         cascade_ctc=(lm_params.lm_type == "pctc"),
@@ -381,7 +365,7 @@ def test_main(args, lm_weight=None, mask_th=None):
 
     results_dir = get_results_dir(args.conf)
     os.makedirs(results_dir, exist_ok=True)
-    result_file = f"result_{data_tag}_{lm_tag}_corr{args.lm_weight}_maskth{args.mask_th}_pmaskth{args.phone_mask_th}_ep{args.ep}.tsv"
+    result_file = f"result_{data_tag}_{lm_tag}_corr{args.lm_weight}_maskth{args.mask_th}_ep{args.ep}.tsv"
     result_path = os.path.join(results_dir, result_file)
     logging.info(f"result: {result_path}")
     if os.path.exists(result_path):
@@ -410,7 +394,6 @@ if __name__ == "__main__":
     parser.add_argument("-lm_ep", type=str, required=True)
     parser.add_argument("--lm_weight", type=float, default=1)
     parser.add_argument("--mask_th", type=float, default=0.9)
-    parser.add_argument("--phone_mask_th", type=float, default=-1)
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--data", type=str, default=None)
     parser.add_argument("--data_tag", type=str, default="test")
